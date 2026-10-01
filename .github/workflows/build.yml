@@ -1,0 +1,59 @@
+yaml
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, experimental: false, asset: GarminPlanLoader-Windows.zip }
+          - { name: macOS-Apple-Silicon, os: macos-latest, experimental: false, asset: GarminPlanLoader-macOS-AppleSilicon.zip }
+          - { name: macOS-Intel, os: macos-15-intel, experimental: true, asset: GarminPlanLoader-macOS-Intel.zip }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Zależności
+        run: pip install -r requirements-build.txt
+      - name: Testy
+        run: python -m pytest -q tests
+      - name: Budowa (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name GarminPlanLoader `
+            --collect-all curl_cffi --collect-all ua_generator --collect-all garminconnect app.py
+          $p = Start-Process -FilePath dist\GarminPlanLoader.exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "selftest nie przeszedł (kod $($p.ExitCode))" }
+          Compress-Archive -Path dist\GarminPlanLoader.exe -DestinationPath ${{ matrix.asset }}
+      - name: Budowa (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller --noconfirm --windowed --name GarminPlanLoader \
+            --collect-all curl_cffi --collect-all ua_generator --collect-all garminconnect app.py
+          dist/GarminPlanLoader.app/Contents/MacOS/GarminPlanLoader --selftest
+          ditto -c -k --keepParent dist/GarminPlanLoader.app ${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+      - name: Wydanie
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
