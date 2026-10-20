@@ -16,6 +16,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import garmin_io
 import plan
+import ustawienia
 
 NAZWA = "Garmin Plan Loader"
 WERSJA = "0.1.0"
@@ -25,7 +26,7 @@ INK, BG, KARTA, LINIA = "#17212B", "#EEF1F4", "#FFFFFF", "#D5DCE3"
 TEKST, PRZYGASZONY = "#17212B", "#5E6B78"
 AKCENT, AKCENT_JASNY = "#0F7B6C", "#0C6256"
 BLAD, BLAD_TLO, OK = "#B3261E", "#FCEBEA", "#1E7D3A"
-STREFY_KOLOR = {1: "#9DB4C8", 2: "#4FA67A", 3: "#E3B83B", 4: "#E8803A", 5: "#C9362E"}
+STREFY_KOLOR = {0: "#8A97A5", 1: "#9DB4C8", 2: "#4FA67A", 3: "#E3B83B", 4: "#E8803A", 5: "#C9362E"}
 KOLORY = {"ok": OK, "err": BLAD, "info": PRZYGASZONY}
 KROKI_PASEK = ("Konto", "Plan", "Wysyłka")
 
@@ -55,6 +56,7 @@ class App(tk.Tk):
         self.blad_planu = None
         self.wyslano = False
         self._odroczone = None
+        self.ust = ustawienia.wczytaj()      # strefy, FTP i strefy mocy zapamiętane na tym komputerze
 
         self.var_email = tk.StringVar()
         self.var_haslo = tk.StringVar()
@@ -158,6 +160,7 @@ class App(tk.Tk):
                  text="Program nieoficjalny, niezwiązany z firmą Garmin. Hasło służy tylko do jednorazowego logowania i "
                       "nie jest zapisywane; na dysku zostaje wyłącznie token, który możesz usunąć. Używasz na własną "
                       "odpowiedzialność.").pack(fill="x", padx=18, pady=(0, 10))
+        self._odswiez_strefy()
         self._odswiez_przyciski()
 
     def _buduj_konto(self, rodzic):
@@ -204,6 +207,13 @@ class App(tk.Tk):
         wew = tk.Frame(karta, bg=KARTA)
         wew.pack(fill="both", expand=True, padx=16, pady=14)
         self._naglowek_karty(wew, "Plan treningowy")
+        wiersz_stref = tk.Frame(wew, bg=KARTA)
+        wiersz_stref.pack(fill="x", pady=(8, 0))
+        self.lbl_strefy = tk.Label(wiersz_stref, text="", bg=KARTA, font=self.f_maly, anchor="w")
+        self.lbl_strefy.pack(side="left")
+        self.btn_strefy = ttk.Button(wiersz_stref, text="Moje strefy i FTP", style="Ghost.TButton", width=0,
+                                     command=self.on_strefy)
+        self.btn_strefy.pack(side="right")
         pasek = tk.Frame(wew, bg=KARTA)
         pasek.pack(fill="x", pady=(10, 8))
         ttk.Button(pasek, text="Skopiuj prompt dla AI", style="Ghost.TButton", command=self.on_prompt).pack(side="left")
@@ -312,7 +322,10 @@ class App(tk.Tk):
             tk.Label(ramka, text="Nie mogę wczytać planu", font=self.f_pogr, bg=BLAD_TLO, fg=BLAD,
                      anchor="w").pack(fill="x", padx=14, pady=(12, 2))
             tk.Label(ramka, text=self.blad_planu, font=self.f_norm, bg=BLAD_TLO, fg=TEKST, anchor="w",
-                     justify="left", wraplength=560).pack(fill="x", padx=14, pady=(0, 12))
+                     justify="left", wraplength=700).pack(fill="x", padx=14, pady=(0, 12))
+            if any(k in self.blad_planu for k in ("brak strefy", "wymaga FTP")):
+                ttk.Button(ramka, text="Ustaw strefy i FTP", style="Ghost.TButton",
+                           command=self.on_strefy).pack(anchor="w", padx=14, pady=(0, 12))
             return
         if not self.wyniki:
             pusto = tk.Frame(f, bg=KARTA)
@@ -345,7 +358,7 @@ class App(tk.Tk):
         w = x["w"]
         minuty = w["estimatedDurationInSecs"] // 60
         czas = f"ok. {minuty // 60} h {minuty % 60:02d} min" if minuty >= 60 else f"ok. {minuty} min"
-        sport = "bieg" if w["sportType"]["sportTypeKey"] == "running" else "rower"
+        sport = plan.ETYKIETA_SPORTU.get(x.get("sport"), "")
         tk.Label(gora, text=f"{czas}  |  {sport}", font=self.f_maly, bg=KARTA, fg=PRZYGASZONY).pack(side="right")
         tk.Label(gora, text=w["workoutName"], font=self.f_nagl, bg=KARTA, fg=TEKST, anchor="w",
                  justify="left", wraplength=300).pack(side="left", padx=10)
@@ -357,11 +370,12 @@ class App(tk.Tk):
         tab = tk.Frame(wew, bg=KARTA)
         tab.pack(fill="x")
         tab.columnconfigure(3, weight=1)
+        szer_et = max(12, min(30, max((len(r[1]) for r in x["wiersze"]), default=0) + 1))
         for i, (nr, et, dl, cel) in enumerate(x["wiersze"]):
-            poziom = x["profil"][i][1]
+            poziom = x["poziomy"][i]
             tk.Label(tab, text=str(nr), font=self.f_maly, bg=KARTA, fg=PRZYGASZONY, width=3, anchor="e").grid(
                 row=i, column=0, sticky="e")
-            tk.Label(tab, text=et, font=self.f_norm, bg=KARTA, fg=TEKST, width=12, anchor="w").grid(
+            tk.Label(tab, text=et, font=self.f_norm, bg=KARTA, fg=TEKST, width=szer_et, anchor="w").grid(
                 row=i, column=1, sticky="w", padx=(6, 0))
             tk.Label(tab, text=dl, font=self.f_pogr, bg=KARTA, fg=TEKST, width=9, anchor="w").grid(row=i, column=2, sticky="w")
             tk.Frame(tab, bg=STREFY_KOLOR[poziom], width=10, height=10).grid(row=i, column=3, sticky="w", pady=4)
@@ -381,7 +395,10 @@ class App(tk.Tk):
         x = 0.0
         for sekundy, poziom, _typ in profil:
             dl = max(3.0, dostepne * sekundy / suma)
-            h = 10 + poziom * 9
+            if poziom == 0:                                   # krok bez intensywności: szary, odpoczynek niższy
+                h = 14 if _typ in (4, 5) else 30
+            else:
+                h = 10 + poziom * 9
             cv.create_rectangle(x, wys - h, x + dl, wys, fill=STREFY_KOLOR[poziom], outline="")
             x += dl + odstep
 
@@ -541,15 +558,44 @@ class App(tk.Tk):
         self._odswiez_przyciski()
 
     # ------------------------------------------------------------------ plan
+    def _odswiez_strefy(self):
+        if ustawienia.ma_cos(self.ust):
+            czesci = []
+            if any(self.ust["strefy"].get(sp) for sp in ("bieg", "rower", "plywanie")):
+                czesci.append("tętno (" + ", ".join(sp for sp in ("bieg", "rower", "plywanie")
+                                                    if self.ust["strefy"].get(sp)) + ")")
+            if self.ust["moc"].get("rower"):
+                czesci.append("moc")
+            if self.ust["ftp"]:
+                czesci.append(f"FTP {self.ust['ftp']:g} W")
+            self.lbl_strefy.configure(text="\u2713 " + ", ".join(czesci), fg=OK)
+        else:
+            self.lbl_strefy.configure(text="Strefy i FTP: nie ustawiono", fg=PRZYGASZONY)
+
+    def on_strefy(self):
+        OknoStref(self)
+
+    def zapisano_strefy(self, ust: dict):
+        """Wywoływane przez okno stref po zapisie: odświeża plan, bo cele mogły dostać nowe wartości."""
+        self.ust = ust
+        self._odswiez_strefy()
+        if self.txt_plan.get("1.0", "end").strip():
+            self.on_sprawdz()
+
     def on_prompt(self):
         self.clipboard_clear()
-        self.clipboard_append(plan.PROMPT_AI)
+        self.clipboard_append(plan.prompt_ai(self.ust))
         self.update()
+        if ustawienia.ma_cos(self.ust):
+            krok2 = ("2. Wpisz rok lub daty treningów i wklej rozpiskę od trenera. Zapisane strefy i FTP "
+                     "program zna sam; o brakujące w promptcie zostaje do uzupełnienia.\n")
+        else:
+            krok2 = ("2. W oznaczonych miejscach wpisz swoje strefy tętna, FTP, rok i wklej rozpiskę od trenera.\n"
+                     "   (Strefy i FTP możesz zapisać raz w programie przyciskiem „Moje strefy”.)\n")
         messagebox.showinfo(
             "Prompt skopiowany",
             "Prompt jest w schowku.\n\n"
-            "1. Wklej go do swojego AI (ChatGPT, Claude, Gemini...).\n"
-            "2. W oznaczonych miejscach wpisz swoje strefy tętna, rok i wklej rozpiskę od trenera.\n"
+            "1. Wklej go do swojego AI (ChatGPT, Claude, Gemini...).\n" + krok2 +
             "3. Skopiuj odpowiedź AI (blok JSON) i wklej ją tutaj, w pole planu.")
 
     def on_plik(self):
@@ -599,7 +645,7 @@ class App(tk.Tk):
         self.wyniki, self.blad_planu = None, None
         if tekst.strip():
             try:
-                self.wyniki = plan.wczytaj(tekst)
+                self.wyniki = plan.wczytaj(tekst, self.ust)
             except plan.BladPlanu as e:
                 self.blad_planu = str(e)
         self.wyslano = False
@@ -653,6 +699,129 @@ class App(tk.Tk):
         self._run(lambda: garmin_io.wyslij(klient, wyniki, nadpisz, lambda m: self.q.put(("log", m))), ok, blad)
 
 
+class OknoStref(tk.Toplevel):
+    """Strefy tętna, FTP i strefy mocy. Zapis trafia do pliku ustawień i zostaje na kolejne uruchomienia."""
+
+    def __init__(self, app: "App"):
+        super().__init__(app)
+        self.app = app
+        self.title("Moje strefy i FTP")
+        self.configure(bg=KARTA)
+        self.resizable(False, False)
+        self.transient(app)
+        ust = app.ust
+
+        wew = tk.Frame(self, bg=KARTA)
+        wew.pack(padx=22, pady=18)
+        tk.Label(wew, text="Moje strefy i FTP", font=app.f_nagl, bg=KARTA, fg=TEKST).grid(
+            row=0, column=0, columnspan=9, sticky="w")
+        tk.Label(wew, bg=KARTA, fg=PRZYGASZONY, font=app.f_maly, justify="left", wraplength=700,
+                 text="Zapiszę to na tym komputerze i użyję przy każdym planie, więc nie musisz tego podawać AI. "
+                      "Wartości z samego planu mają pierwszeństwo. Wszystko jest opcjonalne."
+                 ).grid(row=1, column=0, columnspan=9, sticky="w", pady=(4, 10))
+
+        # FTP
+        ftp_wiersz = tk.Frame(wew, bg=KARTA)
+        ftp_wiersz.grid(row=2, column=0, columnspan=9, sticky="ew", pady=(0, 10))
+        tk.Label(ftp_wiersz, text="FTP roweru", font=app.f_pogr, bg=KARTA, fg=TEKST).pack(side="left")
+        self.var_ftp = tk.StringVar(value=f"{ust['ftp']:g}" if ust.get("ftp") else "")
+        ttk.Entry(ftp_wiersz, textvariable=self.var_ftp, width=7, justify="center").pack(side="left", padx=(8, 4))
+        tk.Label(ftp_wiersz, text="W", bg=KARTA, fg=PRZYGASZONY).pack(side="left")
+        ttk.Button(ftp_wiersz, text="Policz strefy mocy z FTP", style="Ghost.TButton", width=0,
+                   command=self.policz_moc).pack(side="left", padx=(14, 0))
+        tk.Label(wew, bg=KARTA, fg=PRZYGASZONY, font=app.f_maly, justify="left", wraplength=700,
+                 text="Gdy trener zapisze moc w procentach FTP (np. 90-95% FTP), przeliczę ją na waty z tej wartości."
+                 ).grid(row=3, column=0, columnspan=9, sticky="w", pady=(0, 10))
+
+        naglowki = ((1, "Bieg: tętno od"), (2, "do"), (3, "Rower: tętno od"), (4, "do"),
+                    (5, "Rower: moc od (W)"), (6, "do"),
+                    (7, "Pływanie: tętno od"), (8, "do"))
+        for kol, tekst in naglowki:
+            tk.Label(wew, text=tekst, font=app.f_maly, bg=KARTA, fg=PRZYGASZONY).grid(row=4, column=kol, padx=4)
+        self.pola = {"bieg": {}, "rower": {}, "moc": {}, "plywanie": {}}
+        zrodla = (("bieg", ust["strefy"].get("bieg") or {}, ustawienia.NAZWY_STREF),
+                  ("rower", ust["strefy"].get("rower") or {}, ustawienia.NAZWY_STREF),
+                  ("moc", ust["moc"].get("rower") or {}, ustawienia.NAZWY_MOCY),
+                  ("plywanie", ust["strefy"].get("plywanie") or {}, ustawienia.NAZWY_STREF))
+        for i in range(5):
+            wiersz = 5 + i
+            nazwa = ustawienia.NAZWY_STREF[i]
+            tk.Label(wew, text=nazwa, font=app.f_pogr, bg=STREFY_KOLOR[i + 1], fg=INK if i == 2 else "#FFFFFF",
+                     width=4).grid(row=wiersz, column=0, pady=3, padx=(0, 8))
+            for j, (klucz, zapisane, nazwy) in enumerate(zrodla):
+                n = nazwy[i]
+                z = zapisane.get(n) or ["", ""]
+                zm = (tk.StringVar(value=str(z[0])), tk.StringVar(value=str(z[1])))
+                self.pola[klucz][n] = zm
+                for k in (0, 1):
+                    ttk.Entry(wew, textvariable=zm[k], width=6, justify="center").grid(
+                        row=wiersz, column=1 + 2 * j + k, padx=4, pady=3)
+        tk.Label(wew, bg=KARTA, fg=PRZYGASZONY, font=app.f_maly, justify="left", wraplength=700,
+                 text="W planie: S1-S5 to strefy tętna, P1-P5 to strefy mocy (te same wiersze). Dla każdej tabeli "
+                      "wypełnij wszystkie 5 stref albo żadnej. Pustą tabelę możesz pominąć."
+                 ).grid(row=10, column=0, columnspan=9, sticky="w", pady=(8, 0))
+        self.lbl_blad = tk.Label(wew, text="", bg=KARTA, fg=BLAD, font=app.f_maly, justify="left", wraplength=700)
+        self.lbl_blad.grid(row=11, column=0, columnspan=9, sticky="w", pady=(6, 0))
+        self.lbl_info = tk.Label(wew, text="", bg=KARTA, fg=PRZYGASZONY, font=app.f_maly, justify="left", wraplength=700)
+        self.lbl_info.grid(row=12, column=0, columnspan=9, sticky="w")
+
+        przyciski = tk.Frame(wew, bg=KARTA)
+        przyciski.grid(row=13, column=0, columnspan=9, sticky="ew", pady=(12, 0))
+        ttk.Button(przyciski, text="Zapisz", style="Primary.TButton", command=self.zapisz).pack(side="left")
+        ttk.Button(przyciski, text="Anuluj", style="Ghost.TButton", command=self.destroy).pack(side="left", padx=(8, 0))
+        ttk.Button(przyciski, text="Usuń zapisane", style="Link.TButton", width=0,
+                   command=self.usun).pack(side="right")
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.bind("<Return>", lambda _e: self.zapisz())
+        self.update_idletasks()
+        self.geometry(f"+{app.winfo_rootx() + 60}+{app.winfo_rooty() + 40}")
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+    def _zbierz(self) -> dict:
+        wynik = {kl: {n: (v[0].get(), v[1].get()) for n, v in wiersze.items()} for kl, wiersze in self.pola.items()}
+        wynik["ftp"] = self.var_ftp.get()
+        return wynik
+
+    def policz_moc(self):
+        """Wypełnia tabelę mocy z FTP wg standardowych progów (do poprawienia ręcznie)."""
+        self.lbl_blad.configure(text="")
+        try:
+            ftp = plan.sprawdz_ftp(self.var_ftp.get().strip().replace(",", ".") or None)
+        except plan.BladPlanu as e:
+            self.lbl_blad.configure(text=f"FTP: {e}")
+            return
+        if not ftp:
+            self.lbl_blad.configure(text="Najpierw wpisz FTP w watach.")
+            return
+        for n, (a, b) in ustawienia.moc_z_ftp(ftp).items():
+            self.pola["moc"][n][0].set(str(a))
+            self.pola["moc"][n][1].set(str(b))
+        progi = ", ".join(f"{a}-{b}%" for a, b in ustawienia.PROCENTY_MOCY)
+        self.lbl_info.configure(text=f"Policzone z progów {progi} FTP (pięć pierwszych stref wg Coggana). "
+                                     f"Możesz je poprawić ręcznie.")
+
+    def zapisz(self):
+        try:
+            ust = ustawienia.z_pol(self._zbierz())
+            ustawienia.zapisz(ust)
+        except plan.BladPlanu as e:
+            self.lbl_blad.configure(text=str(e))
+            return
+        except OSError as e:
+            self.lbl_blad.configure(text=f"Nie mogę zapisać ustawień: {e}")
+            return
+        self.app.zapisano_strefy(ustawienia.wczytaj())
+        self.destroy()
+
+    def usun(self):
+        ustawienia.zapisz(ustawienia.puste())
+        self.app.zapisano_strefy(ustawienia.puste())
+        self.destroy()
+
+
 # ---------------------------------------------------------------------- start
 
 def selftest() -> int:
@@ -662,9 +831,11 @@ def selftest() -> int:
     import garminconnect
 
     garminconnect.Garmin()                                   # konstruktor bez logowania
+    from garminconnect import exercises
+    assert len(exercises.EXERCISES) > 1000, "brak katalogu ćwiczeń Garmina"
     wyniki = plan.wczytaj(plan.PRZYKLAD_PLANU)
-    assert sum(1 for x in wyniki if not x["wolne"]) == 2, "przykład powinien mieć 2 treningi"
-    assert "Treningów do wysłania: 2" in plan.pokaz(wyniki)
+    assert sum(1 for x in wyniki if not x["wolne"]) == 3, "przykład powinien mieć 3 treningi"
+    assert "Treningów do wysłania: 3" in plan.pokaz(wyniki)
     print(f"{NAZWA} {WERSJA}: selftest OK")
     return 0
 

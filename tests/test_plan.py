@@ -22,7 +22,7 @@ def kroki(w):
 class TestPlan(unittest.TestCase):
     def test_przyklad_sie_wczytuje(self):
         wyniki = plan.wczytaj(plan.PRZYKLAD_PLANU)
-        self.assertEqual(sum(1 for x in wyniki if not x["wolne"]), 2)
+        self.assertEqual(sum(1 for x in wyniki if not x["wolne"]), 3)
 
     def test_tempo_i_dystans(self):
         w = plan.wczytaj(p([{"nazwa": "A", "kroki": [{"typ": "interwal", "dystans": "6km", "cel": "4:20-4:25"}]}]))[0]
@@ -75,7 +75,7 @@ class TestPlan(unittest.TestCase):
             ([{"nazwa": "A", "kroki": [{"typ": "sprint", "czas": "30:00"}]}], "nieznany typ"),
             ([{"nazwa": "A", "kroki": [{"typ": "bieg", "czas": "30:00", "dystans": "5km"}]}], "dokładnie jedno"),
             ([{"nazwa": "A", "kroki": [{"typ": "bieg"}]}], "dokładnie jedno"),
-            ([{"nazwa": "A", "sport": "plywanie", "kroki": [{"typ": "bieg", "czas": "30:00"}]}], "nie jest obsługiwany"),
+            ([{"nazwa": "A", "sport": "triathlon", "kroki": [{"typ": "bieg", "czas": "30:00"}]}], "nie jest obsługiwany"),
             ([{"nazwa": "A", "kroki": [{"typ": "bieg", "czas": "30:00", "cel": "200-220W"}]}], "rower"),
             ([{"nazwa": "A", "kroki": [{"typ": "bieg", "czas": "30:00", "cel": "1:00-1:05"}]}], "nierealnie"),
             ([{"data": "02-10-2026", "nazwa": "A", "kroki": [{"typ": "bieg", "czas": "30:00"}]}], "zła data"),
