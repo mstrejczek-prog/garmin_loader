@@ -88,10 +88,58 @@ Kroki to ćwiczenia z katalogu Garmin Connect (ok. 1500 pozycji):
 - Sekcja `strefy` w planie jest **opcjonalna**: bez niej program użyje stref zapisanych w „Moje strefy i FTP”. Jeśli plan ją zawiera, ma pierwszeństwo.
 - Prawidłowy prompt do swojego AI dostajesz przyciskiem na stronie – nie musisz pisać formatu ręcznie.
 
+## Claude w czacie (connector MCP)
+
+Plan Loader działa też jako **connector dla Claude** (claude.ai w przeglądarce, aplikacja na telefon
+i desktop). Wtedy w zwykłej rozmowie Claude sam:
+
+- **układa i wysyła plany** na zegarek: sprawdza plan, pokazuje Ci podgląd, a po Twojej akceptacji
+  wysyła go do Garmin Connect razem z kalendarzem (bez dublowania, jak na stronie),
+- **czyta Twoje dane**: wykonane aktywności (z okrążeniami i czasem w strefach), sen, HRV, tętno
+  spoczynkowe, Body Battery, stres, Training Readiness, Training Status (obciążenie, ACWR), VO2max,
+- **zagląda do kalendarza** i zdejmuje z niego treningi.
+
+| Narzędzie | Co robi |
+|---|---|
+| `format_planu` | format JSON planu + Twoje strefy |
+| `moje_ustawienia` | strefy tętna/mocy i FTP (zapisane tutaj i z profilu Garmin) |
+| `sprawdz_plan` | podgląd planu bez wysyłania |
+| `wyslij_plan` | wysyłka do Garmin Connect + kalendarz |
+| `kalendarz`, `usun_z_kalendarza` | zaplanowane treningi |
+| `aktywnosci`, `trening` | wykonane treningi i szczegóły jednego |
+| `wellness` | sen, HRV, tętno spoczynkowe, Body Battery, stres (do 14 dni) |
+| `gotowosc` | Training Readiness, Training Status, VO2max |
+
+### Jak podłączyć
+
+1. Wymyśl długi losowy tekst - to będzie **MCP_TOKEN** (hasło connectora).
+2. Zaloguj się na stronie Plan Loadera i kliknij **„Connector dla Claude”**. Okno pokaże
+   gotowe wartości **GARMIN_TOKEN** (Twoje logowanie, zaszyfrowane kluczem serwera) i, jeśli masz
+   zapisane strefy, **USTAWIENIA**.
+3. W Render → Twój serwis → **Environment** dodaj `MCP_TOKEN`, `GARMIN_TOKEN` i `USTAWIENIA`
+   (serwis uruchomi się ponownie).
+4. W claude.ai: **Ustawienia → Connectors → Dodaj własny connector**:
+   - adres: `https://<twoj-serwis>.onrender.com/mcp`,
+   - w ustawieniach zaawansowanych dodaj nagłówek `Authorization` o wartości `Bearer <MCP_TOKEN>`.
+5. W rozmowie włącz connector i napisz np. *„Jak się regeneruję w tym tygodniu?”* albo
+   *„Rozpisz mi trzy treningi na weekend i wyślij na zegarek”*.
+
+Uwagi:
+
+- To serwer **jednego użytkownika**: działa na koncie, którego token jest w `GARMIN_TOKEN`.
+  Bez `MCP_TOKEN` endpoint `/mcp` jest wyłączony.
+- Gdy Claude zgłosi, że **logowanie wygasło**, zaloguj się ponownie na stronie i podmień
+  `GARMIN_TOKEN`. Biblioteka odświeża token sama, ale zmiennej środowiskowej nie może nadpisać;
+  jeśli zdarza się to po każdym uśpieniu serwera, trzeba będzie trzymać token w małej bazie.
+- Darmowy Render usypia serwer po ~15 minutach - pierwsze pytanie po przerwie może się nie
+  zmieścić w czasie; wtedy poproś Claude, żeby spróbował jeszcze raz.
+- Dane czytane są tą samą nieoficjalną biblioteką co wysyłka; Garmin ogranicza liczbę zapytań,
+  dlatego zakresy dat są limitowane (aktywności do 92 dni, wellness do 14 dni).
+
 ## Prywatność i bezpieczeństwo
 
 - Hasło jest wysyłane do serwera tylko w chwili logowania, przekazywane do Garmina i **nigdzie nie zapisywane**.
-- Serwer **nie ma bazy danych i niczego nie przechowuje**. Po zalogowaniu oddaje przeglądarce token logowania Garmina **zaszyfrowany kluczem serwera** (`SECRET_KEY`); przeglądarka trzyma go u siebie i dołącza do wysyłki. Bez klucza serwera token zapisany w przeglądarce jest bezużyteczny. Gdy zdejmiesz ptaszek „Zapamiętaj”, token znika po zamknięciu karty. „Wyloguj” usuwa go z przeglądarki.
+- Serwer **nie ma bazy danych i niczego nie przechowuje** (wyjątek: jeśli włączysz connector dla Claude, token Garmina leży zaszyfrowany w zmiennej `GARMIN_TOKEN` na serwerze). Po zalogowaniu oddaje przeglądarce token logowania Garmina **zaszyfrowany kluczem serwera** (`SECRET_KEY`); przeglądarka trzyma go u siebie i dołącza do wysyłki. Bez klucza serwera token zapisany w przeglądarce jest bezużyteczny. Gdy zdejmiesz ptaszek „Zapamiętaj”, token znika po zamknięciu karty. „Wyloguj” usuwa go z przeglądarki.
 - Strefy, FTP i szkic planu zostają w pamięci przeglądarki (localStorage) na danym urządzeniu.
 - Kto uruchamia serwer, technicznie ma dostęp do ruchu przez niego przechodzącego – korzystaj z serwera swojego albo osoby, której ufasz. Kod jest w tym repozytorium.
 - Strona nie ma telemetrii ani zewnętrznych skryptów.
@@ -110,6 +158,9 @@ Działa też na każdym hostingu z `Procfile` (Railway, Heroku, Fly.io…). Zmie
 |---|---|
 | `SECRET_KEY` | **Wymagana.** Długi losowy tekst do szyfrowania tokenów. Jego zmiana wylogowuje wszystkich. |
 | `KOD_DOSTEPU` | Opcjonalny kod dostępu do strony. |
+| `MCP_TOKEN` | Hasło connectora dla Claude (`/mcp`). Bez niego connector jest wyłączony. |
+| `GARMIN_TOKEN` | Zaszyfrowany token Garmina dla connectora (przycisk „Connector dla Claude”). |
+| `USTAWIENIA` | Opcjonalnie strefy i FTP dla connectora (ten sam przycisk). |
 
 Uwagi:
 

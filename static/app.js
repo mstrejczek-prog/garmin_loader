@@ -582,6 +582,28 @@ async function wyslij() {
 }
 
 // ------------------------------------------------------------------ start
+// ------------------------------------------------------------------ connector dla Claude (MCP)
+function pokazConnector() {
+  const mcp = (stan.start && stan.start.mcp) || {};
+  const ust = stan.ust && (Object.keys(stan.ust.strefy || {}).length || Object.keys(stan.ust.moc || {}).length || stan.ust.ftp)
+    ? JSON.stringify(stan.ust) : "";
+  const tekst = [
+    "# Zmienne do ustawienia na serwerze (Render → Environment):",
+    "GARMIN_TOKEN=" + (stan.token || ""),
+    ust ? "USTAWIENIA=" + ust : "# USTAWIENIA: brak zapisanych stref i FTP w tej przeglądarce",
+    mcp.wlaczony ? "# MCP_TOKEN: ustawiony" : "MCP_TOKEN=<wymyśl długi losowy tekst>",
+    "",
+    "# W claude.ai: Ustawienia → Connectors → Dodaj własny connector:",
+    "#   adres:   " + location.origin + "/mcp",
+    "#   nagłówek: Authorization: Bearer <MCP_TOKEN>",
+  ].join("\n");
+  komunikat("Connector dla Claude",
+    "Dzięki niemu Claude w czacie wysyła plany i czyta Twoje dane z Garmina. GARMIN_TOKEN to Twoje logowanie " +
+    "(zaszyfrowane kluczem serwera) - nie pokazuj go nikomu. Gdy Claude zgłosi, że logowanie wygasło, zaloguj się " +
+    "tu ponownie i podmień GARMIN_TOKEN." + (mcp.token_garmina ? " Serwer ma już ustawiony GARMIN_TOKEN." : ""),
+    tekst);
+}
+
 async function init() {
   try {
     const u = JSON.parse(czytaj(KLUCZ.ust) || "null");
@@ -595,6 +617,7 @@ async function init() {
   $("form-mfa").addEventListener("submit", potwierdzMfa);
   $("btn-mfa-anuluj").addEventListener("click", anulujMfa);
   $("btn-wyloguj").addEventListener("click", wyloguj);
+  $("btn-connector").addEventListener("click", pokazConnector);
   $("btn-strefy").addEventListener("click", otworzStrefy);
   $("btn-prompt").addEventListener("click", kopiujPrompt);
   $("btn-udostepnij").addEventListener("click", udostepnijPrompt);

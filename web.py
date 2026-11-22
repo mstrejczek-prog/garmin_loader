@@ -35,11 +35,12 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import garmin_io
+import mcp_serwer
 import plan
 import ustawienia
 
 NAZWA = "Garmin Plan Loader"
-WERSJA = "0.2.0"
+WERSJA = "0.3.0"
 KATALOG_STATIC = Path(__file__).resolve().parent / "static"
 
 log = logging.getLogger("garmin_plan_loader")
@@ -188,7 +189,9 @@ def zdrowie():
 @app.get("/api/start")
 def api_start():
     return jsonify(nazwa=NAZWA, wersja=WERSJA, przyklad=plan.PRZYKLAD_PLANU, kod_dostepu=bool(KOD_DOSTEPU),
-                   nazwy_stref=ustawienia.NAZWY_STREF, nazwy_mocy=ustawienia.NAZWY_MOCY)
+                   nazwy_stref=ustawienia.NAZWY_STREF, nazwy_mocy=ustawienia.NAZWY_MOCY,
+                   mcp={"wlaczony": bool(os.environ.get("MCP_TOKEN", "").strip()),
+                        "token_garmina": bool(os.environ.get("GARMIN_TOKEN", "").strip())})
 
 
 @app.post("/api/podglad")
@@ -316,6 +319,9 @@ def api_wyslij():
 
     return Response(strumien(), mimetype="application/x-ndjson",
                     headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"})
+
+
+mcp_serwer.zarejestruj(app, odszyfruj)          # connector dla Claude: POST /mcp
 
 
 if __name__ == "__main__":

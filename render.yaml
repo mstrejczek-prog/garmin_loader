@@ -14,3 +14,10 @@ services:
         generateValue: true
       - key: KOD_DOSTEPU
         sync: false
+      # connector dla Claude (MCP) - patrz README, „Claude w czacie”
+      - key: MCP_TOKEN
+        sync: false
+      - key: GARMIN_TOKEN
+        sync: false
+      - key: USTAWIENIA
+        sync: false
