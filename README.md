@@ -1,25 +1,27 @@
 # Garmin Plan Loader
 
-Proste okienko do wgrywania **planu treningowego od trenera** do **Garmin Connect** – razem z datami w kalendarzu, tak żeby treningi same pojawiły się na zegarku po synchronizacji.
+Strona do wgrywania **planu treningowego od trenera** do **Garmin Connect** – razem z datami w kalendarzu, tak żeby treningi same pojawiły się na zegarku po synchronizacji.
 
-Bez terminala, bez instalowania Pythona. Pobierasz, uruchamiasz, logujesz się, wklejasz plan, wysyłasz.
+Działa w przeglądarce: **na komputerze i na telefonie**, bez instalowania czegokolwiek. Na telefonie można ją dodać do ekranu głównego („Dodaj do ekranu początkowego”) – otwiera się wtedy jak zwykła aplikacja.
 
 > ⚠️ **Program nieoficjalny.** Nie jest związany z firmą Garmin ani przez nią wspierany. Korzysta z nieoficjalnej biblioteki [python-garminconnect](https://github.com/cyberjunky/python-garminconnect), która może przestać działać po zmianach po stronie Garmina. Używasz na własną odpowiedzialność, zgodnie z regulaminem Garmin Connect.
 
-![Okno programu](docs/okno.png)
+<p><img src="docs/ekran-komputer.png" alt="Strona na komputerze" width="68%"> <img src="docs/ekran-telefon.png" alt="Strona na telefonie" width="26%"></p>
 
 ## Jak używać
 
-1. **Pobierz** program z zakładki [Releases](../../releases) (Windows: `GarminPlanLoader-Windows.zip`, Mac: wersja Apple Silicon lub Intel) i go rozpakuj.
-2. **Zaloguj się** e-mailem i hasłem do Garmin Connect (jeśli masz włączone MFA – wpisz kod z e-maila/SMS/aplikacji, gdy program o niego poprosi).
-3. **Ustaw raz swoje strefy** (przycisk „Moje strefy i FTP”): strefy tętna dla biegu, roweru i pływania, FTP oraz strefy mocy roweru w watach (można je policzyć z FTP jednym przyciskiem). Zostają zapisane na Twoim komputerze i program używa ich do każdego kolejnego planu.
-4. **Skopiuj prompt** przyciskiem „Skopiuj prompt dla AI”, wklej go do swojego asystenta AI (ChatGPT, Claude, Gemini…) razem z planem od trenera. Prompt już zna Twoje strefy, więc AI o nie nie pyta. AI zwróci plan w formacie JSON.
-5. **Wklej JSON** do okna programu. Podgląd pojawia się sam: każdy trening jako karta z wykresem intensywności i listą kroków – **sprawdź go, zanim wyślesz**.
+1. **Otwórz stronę** (adres serwera, na którym działa – patrz „Uruchomienie na serwerze”).
+2. **Zaloguj się** e-mailem i hasłem do Garmin Connect. Jeśli masz włączone MFA, strona poprosi o kod z e-maila/SMS/aplikacji.
+3. **Ustaw raz swoje strefy** (przycisk „Moje strefy i FTP”): strefy tętna dla biegu, roweru i pływania, FTP oraz strefy mocy roweru w watach (można je policzyć z FTP jednym przyciskiem). Zostają zapisane w tej przeglądarce i są używane przy każdym kolejnym planie.
+4. **Skopiuj prompt** przyciskiem „Skopiuj prompt dla AI” i wklej go do swojego asystenta AI (ChatGPT, Claude, Gemini…) razem z planem od trenera. Na telefonie możesz też użyć „Wyślij prompt do aplikacji AI”, który otwiera systemowe menu udostępniania. Prompt już zna Twoje strefy, więc AI o nie nie pyta. AI zwróci plan w formacie JSON.
+5. **Wklej JSON** w pole planu (albo wczytaj plik). Podgląd pojawia się sam: każdy trening jako karta z wykresem intensywności i listą kroków – **sprawdź go, zanim wyślesz**.
 6. **Wyślij.** Treningi trafią do Garmin Connect (Trening → Treningi) i do kalendarza. Zsynchronizuj zegarek.
 
 Przycisk „Przykład” wstawia gotowy przykładowy plan, żeby zobaczyć, jak to działa.
 
 Kolejny tydzień? Wklej nowy plan i wyślij – treningi o tej samej nazwie nie są dublowane, a jeśli zmieniła się data, wpis w kalendarzu jest przestawiany. Zaznacz „Nadpisz”, gdy zmieniły się same kroki.
+
+Strefy i zapamiętane logowanie są zapisane **osobno na każdym urządzeniu** (w przeglądarce). Na telefonie i na komputerze ustawiasz je raz, na każdym z osobna.
 
 ## Format planu
 
@@ -81,38 +83,52 @@ Kroki to ćwiczenia z katalogu Garmin Connect (ok. 1500 pozycji):
 - `powtorz` robi serie łączone (obwód): kolejne ćwiczenia w rundach.
 - `ciezar` jest w kilogramach i opcjonalny, `przerwa` to odpoczynek po każdej serii (także po ostatniej, jak w edytorze Garmina).
 
-> **Uwaga:** format ćwiczeń siłowych jest zgodny z tym, co buduje biblioteka python-garminconnect. Pozostałe typy (pływanie, joga, HIIT itd.) używają zwykłych kroków i nie zostały jeszcze sprawdzone na prawdziwym koncie Garmin - jeśli Garmin coś odrzuci, program pokaże jego komunikat przy danym treningu.
+> **Uwaga:** format ćwiczeń siłowych jest zgodny z tym, co buduje biblioteka python-garminconnect. Pozostałe typy (pływanie, joga, HIIT itd.) używają zwykłych kroków i nie zostały jeszcze sprawdzone na prawdziwym koncie Garmin - jeśli Garmin coś odrzuci, strona pokaże jego komunikat w logu wysyłki.
 
-- Sekcja `strefy` w planie jest **opcjonalna**: bez niej program użyje stref zapisanych w „Moje strefy”. Jeśli plan ją zawiera, ma pierwszeństwo.
-- Prawidłowy prompt do swojego AI dostajesz przyciskiem w programie – nie musisz pisać formatu ręcznie.
+- Sekcja `strefy` w planie jest **opcjonalna**: bez niej program użyje stref zapisanych w „Moje strefy i FTP”. Jeśli plan ją zawiera, ma pierwszeństwo.
+- Prawidłowy prompt do swojego AI dostajesz przyciskiem na stronie – nie musisz pisać formatu ręcznie.
 
 ## Prywatność i bezpieczeństwo
 
-- Hasło służy tylko do jednorazowego zalogowania, **nie jest zapisywane** i nie jest nigdzie wysyłane poza serwery Garmina.
-- Na dysku zostaje **token logowania** w folderze `.garmin-plan-loader` w katalogu domowym (możesz zdjąć ptaszek „Zapamiętaj” albo użyć „Wyloguj i usuń token”) oraz Twoje strefy, FTP i strefy mocy w pliku `.garmin-plan-loader-ustawienia.json`. Wylogowanie nie kasuje stref; usuniesz je w oknie „Moje strefy”.
-- Program nie ma żadnej telemetrii ani własnego serwera. Kod jest w tym repozytorium – możesz go przeczytać.
+- Hasło jest wysyłane do serwera tylko w chwili logowania, przekazywane do Garmina i **nigdzie nie zapisywane**.
+- Serwer **nie ma bazy danych i niczego nie przechowuje**. Po zalogowaniu oddaje przeglądarce token logowania Garmina **zaszyfrowany kluczem serwera** (`SECRET_KEY`); przeglądarka trzyma go u siebie i dołącza do wysyłki. Bez klucza serwera token zapisany w przeglądarce jest bezużyteczny. Gdy zdejmiesz ptaszek „Zapamiętaj”, token znika po zamknięciu karty. „Wyloguj” usuwa go z przeglądarki.
+- Strefy, FTP i szkic planu zostają w pamięci przeglądarki (localStorage) na danym urządzeniu.
+- Kto uruchamia serwer, technicznie ma dostęp do ruchu przez niego przechodzącego – korzystaj z serwera swojego albo osoby, której ufasz. Kod jest w tym repozytorium.
+- Strona nie ma telemetrii ani zewnętrznych skryptów.
 
-## Ostrzeżenia przy pierwszym uruchomieniu
+## Uruchomienie na serwerze
 
-Program nie jest podpisany certyfikatem (to kosztuje), więc system może go ostrzegać:
+Najprościej na [Render](https://render.com) (darmowy plan wystarcza):
 
-- **Windows (SmartScreen):** „Windows ochronił ten komputer” → **Więcej informacji → Uruchom mimo to**. Niektóre antywirusy mogą fałszywie alarmować przy programach spakowanych PyInstallerem; możesz uruchomić program ze źródeł (niżej).
-- **macOS (Gatekeeper):** kliknij program **prawym przyciskiem → Otwórz → Otwórz**. Jeśli to nie pomaga: Ustawienia systemowe → Prywatność i ochrona → „Otwórz mimo to”.
+1. Render → **New → Blueprint** → wskaż to repozytorium. Plik `render.yaml` ustawia wszystko sam, łącznie z losowym `SECRET_KEY`.
+2. Opcjonalnie ustaw `KOD_DOSTEPU` – wtedy strona poprosi o ten kod, zanim cokolwiek zrobi (żeby obce osoby nie korzystały z Twojego serwera).
+3. Otwórz adres `https://…onrender.com` na komputerze i telefonie.
 
-## Uruchomienie ze źródeł
+Działa też na każdym hostingu z `Procfile` (Railway, Heroku, Fly.io…). Zmienne środowiskowe:
 
-Wymaga Pythona 3.10+ z tkinter.
+| Zmienna | Znaczenie |
+|---|---|
+| `SECRET_KEY` | **Wymagana.** Długi losowy tekst do szyfrowania tokenów. Jego zmiana wylogowuje wszystkich. |
+| `KOD_DOSTEPU` | Opcjonalny kod dostępu do strony. |
+
+Uwagi:
+
+- Darmowy plan Render usypia serwer po ~15 minutach bezczynności; pierwsze otwarcie po przerwie trwa ok. minuty.
+- Garmin bywa podejrzliwy wobec logowań z adresów centrów danych. Jeśli logowanie na serwerze nie przechodzi (komunikat o blokadzie lub zbyt wielu próbach), odczekaj i spróbuj ponownie albo uruchom stronę u siebie (niżej).
+- Serwer ogranicza liczbę prób logowania (10 na 15 minut z jednego adresu).
+
+## Uruchomienie u siebie
+
+Wymaga Pythona 3.10+.
 
 ```bash
 pip install -r requirements.txt
-python app.py
+python web.py          # http://localhost:8000
 ```
 
+Żeby otworzyć stronę z telefonu w tej samej sieci Wi‑Fi: `HOST=0.0.0.0 python web.py` i wejdź na `http://<adres-komputera>:8000`. (Schowek i udostępnianie w przeglądarce działają w pełni tylko przez HTTPS albo na `localhost`; bez tego prompt pokaże się do ręcznego skopiowania.)
+
 Testy: `pip install pytest && python -m pytest tests`
-
-## Budowanie
-
-Paczki buduje GitHub Actions (`.github/workflows/build.yml`) dla Windows i macOS. Wydanie powstaje po wypchnięciu tagu `vX.Y.Z`.
 
 ## Licencja
 

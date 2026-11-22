@@ -1,0 +1,198 @@
+/* Garmin Plan Loader - ciemny granat jak pasek zegarka sportowego, jeden akcent, kolory stref jak na wykresie */
+:root {
+  --ink: #17212B;
+  --bg: #EEF1F4;
+  --karta: #FFFFFF;
+  --linia: #D5DCE3;
+  --tekst: #17212B;
+  --przygaszony: #5E6B78;
+  --akcent: #0F7B6C;
+  --akcent-ciemny: #0C6256;
+  --akcent-tekst: #FFFFFF;
+  --blad: #B3261E;
+  --blad-tlo: #FCEBEA;
+  --blad-linia: #E8B4B0;
+  --ok: #1E7D3A;
+  --pole: #FFFFFF;
+  --hover: #F1F4F7;
+  --wylaczony: #B9C4CC;
+  --s0: #8A97A5; --s1: #9DB4C8; --s2: #4FA67A; --s3: #E3B83B; --s4: #E8803A; --s5: #C9362E;
+  --promien: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E141A; --karta: #17202A; --linia: #2B3846; --tekst: #E6ECF1; --przygaszony: #9AA8B5;
+    --akcent: #22A08E; --akcent-ciemny: #1B8778; --blad: #F2827A; --blad-tlo: #3A1E1D; --blad-linia: #6B3330;
+    --ok: #5CC27A; --pole: #111920; --hover: #1F2A35; --wylaczony: #3A4754;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E141A; --karta: #17202A; --linia: #2B3846; --tekst: #E6ECF1; --przygaszony: #9AA8B5;
+  --akcent: #22A08E; --akcent-ciemny: #1B8778; --blad: #F2827A; --blad-tlo: #3A1E1D; --blad-linia: #6B3330;
+  --ok: #5CC27A; --pole: #111920; --hover: #1F2A35; --wylaczony: #3A4754;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--tekst);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+h1, h2 { margin: 0; font-weight: 650; }
+h2 { font-size: 1.05rem; }
+p { margin: .4rem 0; }
+[hidden] { display: none !important; }
+.ukryty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* pasek tytułowy */
+.pasek { background: var(--ink); color: #fff; padding-top: env(safe-area-inset-top); }
+.pasek-wew {
+  max-width: 1240px; margin: 0 auto; padding: 12px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.pasek h1 { font-size: 1.15rem; }
+.kroki { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.kroki li {
+  font-size: .82rem; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  background: #2C3A49; color: #9FB0BF;
+}
+.kroki li.aktualny { background: #fff; color: var(--ink); }
+.kroki li.gotowe { background: var(--akcent); color: #fff; }
+.kroki li.gotowe::before { content: "\2713\00a0"; }
+
+/* układ: telefon - jedna kolumna; komputer - konto+plan po lewej, podgląd+wysyłka po prawej */
+.uklad {
+  max-width: 1240px; margin: 0 auto; padding: 14px 16px;
+  display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 900px) {
+  .uklad {
+    grid-template-areas: "konto podglad" "plan podglad" "plan wysylka";
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 420px minmax(0, 1fr);
+    align-items: start;
+  }
+  #konto { grid-area: konto; }
+  #plan { grid-area: plan; align-self: stretch; display: flex; flex-direction: column; }
+  #plan textarea { flex: 1; min-height: 280px; }
+  #podglad { grid-area: podglad; align-self: stretch; }
+  #wysylka { grid-area: wysylka; }
+}
+
+.karta {
+  background: var(--karta); border: 1px solid var(--linia); border-radius: var(--promien);
+  padding: 14px 16px; min-width: 0;
+}
+.wiersz { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.wiersz.rozsun { justify-content: space-between; }
+.karta > .wiersz:first-child { margin-top: 0; }
+.pod, .maly { color: var(--przygaszony); }
+.maly { font-size: .85rem; }
+.mocny { font-weight: 650; }
+.status { font-size: .85rem; color: var(--przygaszony); }
+.status.err, .blad-tekst { color: var(--blad); }
+.status.ok { color: var(--ok); }
+.blad-tekst { font-size: .88rem; margin: 6px 0 0; min-height: 0; }
+.blad-tekst:empty { display: none; }
+
+/* pola */
+label { display: block; font-size: .88rem; margin: 10px 0 4px; }
+label.wybor { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: .88rem; }
+label.wybor input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--akcent); flex: none; }
+input[type="email"], input[type="password"], input[type="text"], textarea {
+  width: 100%; font: inherit; font-size: 16px; /* 16px: iOS nie przybliża strony przy wpisywaniu */
+  color: var(--tekst); background: var(--pole); border: 1px solid var(--linia); border-radius: 8px; padding: 9px 10px;
+}
+input:focus, textarea:focus { outline: 2px solid var(--akcent); outline-offset: -1px; border-color: var(--akcent); }
+input.krotkie { width: 6.5em; text-align: center; }
+textarea {
+  margin-top: 10px; min-height: 220px; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; line-height: 1.4;
+}
+
+/* przyciski */
+button, .plik {
+  font: inherit; font-size: .92rem; border-radius: 8px; cursor: pointer; min-height: 40px;
+  -webkit-tap-highlight-color: transparent;
+}
+button.glowny { background: var(--akcent); color: var(--akcent-tekst); border: 1px solid var(--akcent); padding: 8px 18px; font-weight: 650; }
+button.glowny:hover:not(:disabled) { background: var(--akcent-ciemny); }
+button.drugi { background: var(--karta); color: var(--tekst); border: 1px solid var(--linia); padding: 7px 12px; }
+button.drugi:hover:not(:disabled) { background: var(--hover); }
+button.link, .plik { background: none; border: 0; color: var(--przygaszony); padding: 7px 8px; display: inline-flex; align-items: center; }
+button.link:hover, .plik:hover { color: var(--akcent); }
+button:disabled { background: var(--wylaczony); border-color: var(--wylaczony); color: var(--karta); cursor: default; }
+button.link:disabled { background: none; color: var(--wylaczony); }
+button:focus-visible, .plik:focus-within { outline: 2px solid var(--akcent); outline-offset: 2px; }
+.plik input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.narzedzia { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 10px; }
+
+.konto-nazwa { font-weight: 650; color: var(--ok); margin-top: 8px; }
+.konto-nazwa::before { content: "\2713\00a0"; }
+
+/* podgląd */
+.legenda { display: inline-flex; align-items: center; gap: 2px; }
+.legenda .maly { margin-right: 6px; }
+.legenda i { font-style: normal; font-size: .75rem; font-weight: 600; width: 26px; text-align: center; color: #fff; border-radius: 3px; }
+.legenda i.s3 { color: var(--ink); }
+.s1 { background: var(--s1); } .s2 { background: var(--s2); } .s3 { background: var(--s3); }
+.s4 { background: var(--s4); } .s5 { background: var(--s5); }
+#lista-treningow { margin-top: 10px; }
+.trening { border: 1px solid var(--linia); border-radius: var(--promien); padding: 10px 12px; margin-bottom: 10px; }
+.trening-gora { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
+.dzien { background: var(--ink); color: #fff; font-weight: 650; font-size: .85rem; padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
+.dzien.brak { background: var(--linia); color: var(--przygaszony); }
+.trening-nazwa { font-weight: 650; flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
+.trening-info { font-size: .85rem; color: var(--przygaszony); white-space: nowrap; }
+.profil { display: block; width: 100%; height: 56px; margin: 10px 0 6px; }
+.kroki-tabela { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.kroki-tabela td { padding: 3px 4px; vertical-align: top; }
+.kroki-tabela td.nr { color: var(--przygaszony); text-align: right; width: 2em; font-size: .82rem; }
+.kroki-tabela td.dl { font-weight: 650; white-space: nowrap; }
+.kroki-tabela td.cel { overflow-wrap: anywhere; }
+.kropka { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.pusto { text-align: center; padding: 36px 8px; }
+.pusto h3 { margin: 0 0 4px; font-size: 1.05rem; }
+.blad-ramka { background: var(--blad-tlo); border: 1px solid var(--blad-linia); border-radius: var(--promien); padding: 12px 14px; }
+.blad-ramka strong { color: var(--blad); display: block; margin-bottom: 4px; }
+.blad-ramka p { margin: 0 0 8px; overflow-wrap: anywhere; }
+
+/* wysyłka */
+.log {
+  margin: 10px 0 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--przygaszony);
+  background: var(--bg); border-radius: 8px; padding: 8px 10px;
+}
+
+.stopka { max-width: 1240px; margin: 0 auto; padding: 4px 16px calc(20px + env(safe-area-inset-bottom)); font-size: .8rem; color: var(--przygaszony); }
+
+/* okna dialogowe */
+dialog {
+  border: 1px solid var(--linia); border-radius: 12px; padding: 18px 18px 16px; background: var(--karta); color: var(--tekst);
+  width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
+}
+dialog::backdrop { background: rgba(10, 16, 22, .55); }
+dialog h2 { margin-bottom: 6px; }
+dialog textarea { min-height: 260px; }
+.zakladki { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 12px; border-bottom: 1px solid var(--linia); }
+.zakladki button {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--przygaszony);
+  padding: 6px 8px; min-height: 36px; font-size: .88rem;
+}
+.zakladki button[aria-selected="true"] { color: var(--tekst); border-bottom-color: var(--akcent); font-weight: 650; }
+.tabela-stref { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.tabela-stref th { font-size: .8rem; font-weight: 500; color: var(--przygaszony); text-align: left; padding: 2px 6px; }
+.tabela-stref td { padding: 3px 6px 3px 0; }
+.tabela-stref td:first-child { width: 3.4em; }
+.tabela-stref input { text-align: center; padding: 7px 6px; }
+.znacznik { display: inline-block; width: 2.6em; text-align: center; font-weight: 650; font-size: .85rem; color: #fff; border-radius: 4px; padding: 3px 0; }
+.znacznik.s3 { color: var(--ink); }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: .9rem;
+  box-shadow: 0 4px 18px rgba(0,0,0,.25); max-width: calc(100vw - 32px); z-index: 10;
+}

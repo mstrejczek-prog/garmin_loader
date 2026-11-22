@@ -2,9 +2,7 @@
 import json
 import os
 import sys
-import tempfile
 import unittest
-from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import plan  # noqa: E402
@@ -27,33 +25,27 @@ def krok(wyniki):
 
 
 class TestZapis(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.stary = ustawienia.PLIK
-        ustawienia.PLIK = Path(self.tmp.name) / "u.json"
+    """Ustawienia przychodzą z przeglądarki - serwer je sprawdza i normalizuje."""
 
-    def tearDown(self):
-        ustawienia.PLIK = self.stary
-        self.tmp.cleanup()
+    def test_poprawne_bez_zmian(self):
+        self.assertEqual(ustawienia.czyste(UST_ROWER), UST_ROWER)
 
-    def test_zapis_i_odczyt(self):
-        self.assertFalse(ustawienia.ma_cos(ustawienia.wczytaj()))
-        ustawienia.zapisz(UST_ROWER)
-        self.assertEqual(ustawienia.wczytaj(), UST_ROWER)
-
-    def test_pusty_zapis_kasuje(self):
-        ustawienia.zapisz(UST)
-        ustawienia.zapisz(ustawienia.puste())
-        self.assertFalse(ustawienia.PLIK.exists())
-        ustawienia.zapisz(ustawienia.puste())               # drugi raz nie rzuca błędu
+    def test_puste_i_brak(self):
+        self.assertEqual(ustawienia.czyste(None), ustawienia.puste())
+        self.assertEqual(ustawienia.czyste({}), ustawienia.puste())
+        self.assertFalse(ustawienia.ma_cos(ustawienia.czyste({})))
 
     def test_sam_ftp_wystarczy(self):
-        ustawienia.zapisz({"ftp": 215})
-        self.assertEqual(ustawienia.wczytaj()["ftp"], 215)
+        self.assertEqual(ustawienia.czyste({"ftp": 215})["ftp"], 215)
 
-    def test_uszkodzony_plik_to_puste_ustawienia(self):
-        ustawienia.PLIK.write_text("{nie json", encoding="utf-8")
-        self.assertEqual(ustawienia.wczytaj(), ustawienia.puste())
+    def test_male_litery_stref(self):
+        self.assertEqual(ustawienia.czyste({"strefy": {"Bieg": {"s2": [125, 148]}}})["strefy"],
+                         {"bieg": {"S2": [125, 148]}})
+
+    def test_smieci_odrzucone(self):
+        for zle in ("tekst", {"ftp": "dużo"}, {"strefy": {"bieg": {"S1": "80-120"}}}, {"ftp": 5000}):
+            with self.assertRaises(plan.BladPlanu):
+                ustawienia.czyste(zle)
 
     def test_moc_z_ftp(self):
         z = ustawienia.moc_z_ftp(200)
