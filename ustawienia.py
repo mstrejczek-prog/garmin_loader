@@ -1,22 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Ustawienia zapisane na komputerze użytkownika: strefy tętna, FTP i strefy mocy roweru.
+Ustawienia użytkownika: strefy tętna, FTP i strefy mocy roweru.
 
-Plik leży obok katalogu z tokenem, ale jest od niego niezależny - "Wyloguj i usuń token" go nie kasuje.
+W wersji webowej trzyma je przeglądarka (localStorage na danym urządzeniu) i dołącza do żądań; serwer tylko
+je sprawdza i normalizuje (czyste()), niczego nie zapisuje.
 Format: {"strefy": {"bieg": {"S1": [80, 124], ...}, "rower": {...}},
          "moc": {"rower": {"P1": [0, 118], ...}}, "ftp": 215}
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import plan
 
-PLIK = Path.home() / ".garmin-plan-loader-ustawienia.json"
 NAZWY_STREF = ("S1", "S2", "S3", "S4", "S5")
 NAZWY_MOCY = ("P1", "P2", "P3", "P4", "P5")
-# domyślne progi stref mocy w % FTP (pięć pierwszych stref wg Coggana); użytkownik może je poprawić w oknie
+# domyślne progi stref mocy w % FTP (pięć pierwszych stref wg Coggana); użytkownik może je poprawić
 PROCENTY_MOCY = ((0, 55), (56, 75), (76, 90), (91, 105), (106, 120))
 
 
@@ -24,35 +21,16 @@ def puste() -> dict:
     return {"strefy": {}, "moc": {}, "ftp": None}
 
 
-def _czyste(ust: dict) -> dict:
+def czyste(ust) -> dict:
     """Waliduje i normalizuje ustawienia; rzuca plan.BladPlanu."""
+    if ust is not None and not isinstance(ust, dict):
+        raise plan.BladPlanu("ustawienia muszą być obiektem")
     ust = ust or {}
     return {
         "strefy": {sp: z for sp, z in plan.normalizuj_strefy(ust.get("strefy")).items() if z},
         "moc": {sp: z for sp, z in plan.normalizuj_strefy(ust.get("moc")).items() if z},
         "ftp": plan.sprawdz_ftp(ust.get("ftp")),
     }
-
-
-def wczytaj() -> dict:
-    """Zapisane ustawienia albo puste, gdy brak pliku lub jest uszkodzony."""
-    try:
-        return _czyste(json.loads(PLIK.read_text(encoding="utf-8")))
-    except (OSError, ValueError, AttributeError, plan.BladPlanu):
-        return puste()
-
-
-def zapisz(ust: dict) -> None:
-    """Zapisuje ustawienia; gdy wszystko jest puste, kasuje plik. Rzuca plan.BladPlanu przy błędnych danych."""
-    czyste = _czyste(ust)
-    if not (czyste["strefy"] or czyste["moc"] or czyste["ftp"]):
-        try:
-            PLIK.unlink()
-        except FileNotFoundError:
-            pass
-        return
-    zapis = {k: v for k, v in czyste.items() if v}
-    PLIK.write_text(json.dumps(zapis, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def ma_cos(ust: dict) -> bool:
@@ -94,7 +72,7 @@ def _z_tabeli(wiersze: dict, nazwy, sport: str, dolna: int, gorna: int, jednostk
 
 
 def z_pol(pola: dict) -> dict:
-    """Pola okna -> ustawienia. pola = {"bieg": {"S1": ("80", "124"), ...}, "rower": {...}, "moc": {"P1": ("0", "118")},
+    """Pola formularza stref -> ustawienia. pola = {"bieg": {"S1": ("80", "124"), ...}, "rower": {...}, "moc": {"P1": ("0", "118")},
     "ftp": "215"}. Puste wiersze są pomijane; dla każdej tabeli trzeba wypełnić wszystkie 5 stref albo żadnej.
     Rzuca plan.BladPlanu z komunikatem po polsku.
     """

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Garmin Plan Loader</title>
+  <meta name="description" content="Wgraj plan treningowy od trenera do Garmin Connect - z komputera albo z telefonu.">
+  <meta name="theme-color" content="#17212B">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/ikona.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/ikona-180.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="pasek">
+    <div class="pasek-wew">
+      <h1>Garmin Plan Loader</h1>
+      <ol class="kroki" aria-label="Postęp">
+        <li data-krok="0">Konto</li>
+        <li data-krok="1">Plan</li>
+        <li data-krok="2">Wysyłka</li>
+      </ol>
+    </div>
+  </header>
+
+  <main class="uklad">
+    <!-- KONTO -->
+    <section class="karta" id="konto" aria-labelledby="konto-tytul">
+      <h2 id="konto-tytul">Konto Garmin Connect</h2>
+
+      <form id="form-logowanie" autocomplete="on">
+        <label for="email">E-mail</label>
+        <input id="email" name="email" type="email" autocomplete="username" inputmode="email" required>
+        <label for="haslo">Hasło</label>
+        <input id="haslo" name="haslo" type="password" autocomplete="current-password" required>
+        <label class="wybor"><input type="checkbox" id="zapamietaj" checked> Zapamiętaj logowanie na tym urządzeniu</label>
+        <div class="wiersz">
+          <button type="submit" class="glowny" id="btn-zaloguj">Zaloguj</button>
+          <span class="status" id="status-logowania" role="status"></span>
+        </div>
+      </form>
+
+      <form id="form-mfa" hidden>
+        <p class="pod">Garmin wysłał kod weryfikacyjny (e-mail, SMS lub aplikacja). Wpisz go tutaj.</p>
+        <label for="kod-mfa">Kod weryfikacyjny</label>
+        <input id="kod-mfa" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+        <div class="wiersz">
+          <button type="submit" class="glowny" id="btn-mfa">Potwierdź</button>
+          <button type="button" class="link" id="btn-mfa-anuluj">Anuluj</button>
+          <span class="status" id="status-mfa" role="status"></span>
+        </div>
+      </form>
+
+      <div id="zalogowany" hidden>
+        <p class="konto-nazwa" id="konto-nazwa"></p>
+        <p class="pod" id="konto-pod"></p>
+        <button type="button" class="drugi" id="btn-wyloguj">Wyloguj</button>
+      </div>
+    </section>
+
+    <!-- PLAN -->
+    <section class="karta" id="plan" aria-labelledby="plan-tytul">
+      <h2 id="plan-tytul">Plan treningowy</h2>
+      <div class="wiersz rozsun">
+        <span class="maly" id="strefy-stan">Strefy i FTP: nie ustawiono</span>
+        <button type="button" class="drugi" id="btn-strefy">Moje strefy i FTP</button>
+      </div>
+      <div class="narzedzia">
+        <button type="button" class="drugi" id="btn-prompt">Skopiuj prompt dla AI</button>
+        <button type="button" class="drugi" id="btn-udostepnij" hidden>Wyślij prompt do aplikacji AI</button>
+        <label class="link plik">Z pliku<input type="file" id="plik" accept=".json,.txt,application/json,text/plain"></label>
+        <button type="button" class="link" id="btn-przyklad">Przykład</button>
+        <button type="button" class="link" id="btn-czysc">Wyczyść</button>
+      </div>
+      <textarea id="tekst-planu" spellcheck="false" autocapitalize="off" autocomplete="off"
+                aria-label="Plan w formacie JSON"
+                placeholder="Wklej tutaj plan w formacie JSON.
+
+Nie masz go jeszcze? Kliknij „Skopiuj prompt dla AI”, wklej go swojemu asystentowi razem z rozpiską trenera i skopiuj jego odpowiedź tutaj."></textarea>
+    </section>
+
+    <!-- PODGLĄD -->
+    <section class="karta" id="podglad" aria-labelledby="podglad-tytul">
+      <div class="wiersz rozsun">
+        <h2 id="podglad-tytul">Podgląd planu</h2>
+        <span class="legenda" aria-hidden="true"><span class="maly">intensywność</span>
+          <i class="s1">S1</i><i class="s2">S2</i><i class="s3">S3</i><i class="s4">S4</i><i class="s5">S5</i></span>
+      </div>
+      <div id="lista-treningow" aria-live="polite"></div>
+    </section>
+
+    <!-- WYSYŁKA -->
+    <section class="karta" id="wysylka" aria-labelledby="wysylka-tytul">
+      <h2 id="wysylka-tytul" class="ukryty">Wysyłka</h2>
+      <div class="wiersz">
+        <button type="button" class="glowny" id="btn-wyslij" disabled>Wyślij do Garmin Connect</button>
+        <span class="maly" id="wskazowka-wysylki"></span>
+      </div>
+      <label class="wybor"><input type="checkbox" id="nadpisz"> Nadpisz treningi o tych samych nazwach (gdy zmieniły się kroki)</label>
+      <pre class="log" id="log" hidden></pre>
+    </section>
+  </main>
+
+  <footer class="stopka">
+    Program nieoficjalny, niezwiązany z firmą Garmin. Hasło służy tylko do zalogowania i nie jest zapisywane.
+    Strefy i token logowania (zaszyfrowany) zostają w tej przeglądarce. Używasz na własną odpowiedzialność.
+    <span id="wersja"></span>
+  </footer>
+
+  <!-- STREFY -->
+  <dialog id="dlg-strefy" aria-labelledby="strefy-tytul">
+    <form method="dialog" id="form-strefy">
+      <h2 id="strefy-tytul">Moje strefy i FTP</h2>
+      <p class="pod">Zapiszę je w tej przeglądarce i użyję przy każdym planie, więc nie musisz ich podawać AI.
+        Wartości z samego planu mają pierwszeństwo. Wszystko jest opcjonalne.</p>
+      <div class="wiersz">
+        <label for="ftp" class="mocny">FTP roweru</label>
+        <input id="ftp" type="text" inputmode="decimal" class="krotkie"> <span class="maly">W</span>
+        <button type="button" class="drugi" id="btn-policz-moc">Policz strefy mocy z FTP</button>
+      </div>
+      <p class="maly">Gdy trener zapisze moc w procentach FTP (np. 90-95% FTP), przeliczę ją na waty z tej wartości.</p>
+      <div class="zakladki" role="tablist">
+        <button type="button" role="tab" data-tabela="bieg" aria-selected="true">Bieg (tętno)</button>
+        <button type="button" role="tab" data-tabela="rower">Rower (tętno)</button>
+        <button type="button" role="tab" data-tabela="moc">Rower (moc, W)</button>
+        <button type="button" role="tab" data-tabela="plywanie">Pływanie (tętno)</button>
+      </div>
+      <div id="tabele-stref"></div>
+      <p class="maly">S1-S5 to strefy tętna, P1-P5 strefy mocy. W każdej tabeli wypełnij wszystkie 5 stref albo żadnej.</p>
+      <p class="blad-tekst" id="strefy-blad" role="alert"></p>
+      <p class="maly" id="strefy-info"></p>
+      <div class="wiersz rozsun">
+        <span class="wiersz">
+          <button type="button" class="glowny" id="btn-strefy-zapisz">Zapisz</button>
+          <button type="button" class="drugi" id="btn-strefy-anuluj">Anuluj</button>
+        </span>
+        <button type="button" class="link" id="btn-strefy-usun">Usuń zapisane</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- PROMPT (gdy schowek niedostępny) i komunikaty -->
+  <dialog id="dlg-tekst" aria-labelledby="tekst-tytul">
+    <form method="dialog">
+      <h2 id="tekst-tytul"></h2>
+      <p class="pod" id="tekst-opis"></p>
+      <textarea id="tekst-pole" readonly hidden></textarea>
+      <div class="wiersz"><button class="glowny" value="ok">OK</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-potwierdz" aria-labelledby="potwierdz-tytul">
+    <form method="dialog">
+      <h2 id="potwierdz-tytul"></h2>
+      <p class="pod" id="potwierdz-opis"></p>
+      <div class="wiersz">
+        <button class="glowny" value="tak" id="potwierdz-tak">Tak</button>
+        <button class="drugi" value="nie">Anuluj</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-kod" aria-labelledby="kod-tytul">
+    <form method="dialog" id="form-kod">
+      <h2 id="kod-tytul">Kod dostępu</h2>
+      <p class="pod">Ten serwer jest prywatny. Wpisz kod dostępu od osoby, która go uruchomiła.</p>
+      <input id="kod-dostepu" type="password" autocomplete="off" required>
+      <p class="blad-tekst" id="kod-blad" role="alert"></p>
+      <div class="wiersz"><button class="glowny" value="ok">Dalej</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

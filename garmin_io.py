@@ -1,22 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-Rozmowa z Garmin Connect: logowanie (token / hasło + MFA) i wysyłka treningów do kalendarza.
+Rozmowa z Garmin Connect: logowanie (token / hasło + kod MFA) i wysyłka treningów do kalendarza.
 
-Hasło nie jest nigdzie zapisywane ani wypisywane. Na dysku zostaje tylko token logowania
-(plik w katalogu TOKEN_DIR), dzięki któremu kolejne uruchomienia nie wymagają hasła.
+Wersja webowa: serwer niczego nie zapisuje. Po zalogowaniu zwraca token (tekst JSON z biblioteki), który
+przeglądarka trzyma u siebie (zaszyfrowany przez serwer, patrz web.py) i dołącza do kolejnych żądań.
+Logowanie z MFA odbywa się w dwóch żądaniach: zaloguj_haslem() zwraca stan oczekującego logowania,
+dokoncz_mfa() kończy je kodem. Hasło nie jest nigdzie zapisywane ani wypisywane.
 Dostęp odbywa się przez nieoficjalną bibliotekę python-garminconnect.
 """
 from __future__ import annotations
 
 import datetime
-import shutil
-from pathlib import Path
-
-TOKEN_DIR = Path.home() / ".garmin-plan-loader"
 
 
 class BladGarmin(Exception):
     """Błąd po stronie Garmin Connect - komunikat po polsku dla użytkownika."""
+
+
+class TokenWygasl(BladGarmin):
+    """Zapisany token jest nieważny - trzeba zalogować się ponownie."""
 
 
 def _bledy_biblioteki():
@@ -37,55 +39,67 @@ def _opis_bledu(e: Exception) -> str:
                 "Garmin potrafi też czasowo blokować logowanie spoza przeglądarki - wtedy odczekaj i spróbuj ponownie. "
                 f"(szczegóły: {e})")
     if isinstance(e, conn):
-        return f"Problem z połączeniem z Garmin Connect. Sprawdź internet i spróbuj ponownie. (szczegóły: {e})"
+        return f"Problem z połączeniem z Garmin Connect. Spróbuj ponownie za chwilę. (szczegóły: {e})"
     return str(e)
 
 
-def zapisane_logowanie() -> bool:
-    return TOKEN_DIR.is_dir() and any(TOKEN_DIR.iterdir())
-
-
-def _nazwa_konta(klient) -> str:
+def nazwa_konta(klient) -> str:
     return (getattr(klient, "full_name", None) or getattr(klient, "display_name", None) or "konto Garmin")
 
 
-def zaloguj_tokenem():
-    """Logowanie zapisanym tokenem. Zwraca klienta albo None, jeśli tokenu nie ma / wygasł."""
-    if not zapisane_logowanie():
-        return None
-    from garminconnect import Garmin
-    try:
-        klient = Garmin()
-        klient.login(str(TOKEN_DIR))
-        return klient
-    except Exception:
-        return None
+def token(klient) -> str:
+    """Aktualny token klienta (biblioteka odświeża go sama, więc po każdej operacji warto go odesłać)."""
+    return klient.client.dumps()
 
 
-def zaloguj_haslem(email: str, haslo: str, prompt_mfa, zapamietaj: bool = True):
-    """Logowanie e-mailem i hasłem. prompt_mfa() ma zwrócić kod z e-maila/SMS/aplikacji."""
+def _nowy_klient(*args, **kw):
     from garminconnect import Garmin
-    if not email or not haslo:
-        raise BladGarmin("Wpisz e-mail i hasło do Garmin Connect.")
+    return Garmin(*args, **kw)
+
+
+def zaloguj_tokenem(tekst_tokenu: str):
+    """Klient z tokenu zapisanego w przeglądarce. Rzuca TokenWygasl, gdy token jest nieważny."""
+    if not tekst_tokenu:
+        raise TokenWygasl("Brak logowania - zaloguj się do Garmin Connect.")
     try:
-        klient = Garmin(email.strip(), haslo, prompt_mfa=prompt_mfa)
-        if zapamietaj:
-            TOKEN_DIR.mkdir(parents=True, exist_ok=True)
-            klient.login(str(TOKEN_DIR))
-        else:
-            klient.login()
+        klient = _nowy_klient()
+        klient.login(tekst_tokenu)
         return klient
     except Exception as e:
+        auth, _conn, _many = _bledy_biblioteki()
+        if isinstance(e, auth):
+            raise TokenWygasl("Logowanie wygasło - zaloguj się ponownie.") from e
         raise BladGarmin(_opis_bledu(e)) from e
 
 
-def wyloguj() -> None:
-    """Usuwa zapisany token z tego komputera."""
-    if TOKEN_DIR.exists():
-        shutil.rmtree(TOKEN_DIR, ignore_errors=True)
+def zaloguj_haslem(email: str, haslo: str):
+    """Logowanie e-mailem i hasłem.
+
+    Zwraca ("ok", klient) albo ("mfa", stan) - stan (dane JSON) trzeba przekazać do dokoncz_mfa() razem z kodem.
+    """
+    if not email or not haslo:
+        raise BladGarmin("Wpisz e-mail i hasło do Garmin Connect.")
+    try:
+        klient = _nowy_klient(email.strip(), haslo, return_on_mfa=True)
+        status, stan = klient.login()
+    except Exception as e:
+        raise BladGarmin(_opis_bledu(e)) from e
+    if status == "needs_mfa":
+        return "mfa", stan
+    return "ok", klient
 
 
-nazwa_konta = _nazwa_konta
+def dokoncz_mfa(stan, kod: str):
+    """Kończy logowanie wymagające kodu weryfikacyjnego (e-mail/SMS/aplikacja). Zwraca klienta."""
+    kod = (kod or "").strip()
+    if not kod:
+        raise BladGarmin("Wpisz kod weryfikacyjny.")
+    try:
+        klient = _nowy_klient()
+        klient.resume_login(stan, kod)
+        return klient
+    except Exception as e:
+        raise BladGarmin(_opis_bledu(e)) from e
 
 
 # ----------------------------------------------------------------- kalendarz i wysyłka
