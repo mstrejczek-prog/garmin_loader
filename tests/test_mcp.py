@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import garmin_dane  # noqa: E402
+import plan  # noqa: E402
 import garmin_io  # noqa: E402
 import mcp_serwer  # noqa: E402
 import web  # noqa: E402
@@ -57,7 +58,7 @@ class AtrapaDane(AtrapaGarmin):
                                      "dailyAcuteChronicWorkloadRatio": 1.111}}}}}
 
 
-class TestMcp(unittest.TestCase):
+class BazaMcp(unittest.TestCase):
     def setUp(self):
         self.stary = garmin_io._nowy_klient
         garmin_io._nowy_klient = AtrapaDane
@@ -91,6 +92,8 @@ class TestMcp(unittest.TestCase):
         wynik = r.get_json()["result"]
         return wynik, wynik["content"][0]["text"]
 
+
+class TestMcp(BazaMcp):
     # --- protokół i autoryzacja
     def test_autoryzacja(self):
         self.assertEqual(self.rpc("ping", token=None).status_code, 401)
@@ -109,7 +112,8 @@ class TestMcp(unittest.TestCase):
         self.assertEqual(r.status_code, 202)
         nazwy = {t["name"] for t in self.rpc("tools/list").get_json()["result"]["tools"]}
         self.assertTrue({"format_planu", "sprawdz_plan", "wyslij_plan", "kalendarz", "aktywnosci",
-                         "trening", "wellness", "gotowosc", "usun_z_kalendarza", "moje_ustawienia"} <= nazwy)
+                         "trening", "wellness", "gotowosc", "usun_z_kalendarza", "moje_ustawienia",
+                         "serie", "plan_treningu", "plan_vs_wykonanie", "pobierz_fit", "surowe_dane"} <= nazwy)
         self.assertEqual(self.c.get("/mcp", headers={"Authorization": "Bearer tajne"}).status_code, 405)
         self.assertEqual(self.rpc("nie/ma").get_json()["error"]["code"], -32601)
 
@@ -200,6 +204,147 @@ class TestMcp(unittest.TestCase):
     def test_start_pokazuje_stan_connectora(self):
         r = self.c.get("/api/start").get_json()
         self.assertEqual(r["mcp"], {"wlaczony": True, "token_garmina": True})
+
+
+PLAN_SILA = json.dumps({"treningi": [{"nazwa": "Siła A", "sport": "silowy", "kroki": [
+    {"typ": "rozgrzewka", "czas": "8:00"},
+    {"cwiczenie": "Lat Pull-down", "serie": 2, "powtorzenia": 10, "ciezar": "50kg", "przerwa": "1:30"},
+    {"cwiczenie": "Plank", "serie": 1, "czas": "0:45"}]}]})
+
+
+def _workout_sila():
+    w = plan.wczytaj(PLAN_SILA)[0]["w"]
+    return {**w, "workoutId": 1769460084}
+
+
+def _fit_indeksy(w):
+    return garmin_dane._indeksy_fit(w["workoutSegments"][0]["workoutSteps"])
+
+
+class AtrapaSila(AtrapaDane):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.w = _workout_sila()
+
+    def get_activity(self, aid):
+        if str(aid) == "25145798508":
+            return {"activityId": 25145798508, "activityTypeDTO": {"typeKey": "strength_training"}, "summaryDTO": {}}
+        return {"activityId": int(aid), "activityName": "Siła A", "activityTypeDTO": {"typeKey": "strength_training"},
+                "summaryDTO": {"associatedWorkoutId": 1769460084, "startTimeLocal": "2026-11-22T12:31:11"}}
+
+    def get_workout_by_id(self, wid):
+        return self.w
+
+    def get_activity_exercise_sets(self, aid):
+        idx = _fit_indeksy(self.w)
+        kroki = {}
+        def zbierz(lista):
+            for st in lista:
+                if st.get("type") == "RepeatGroupDTO":
+                    zbierz(st["workoutSteps"])
+                elif st.get("category"):
+                    kroki[st["category"]] = idx.index(st["stepOrder"])
+        zbierz(self.w["workoutSegments"][0]["workoutSteps"])
+        lat = [k for k in kroki if k != "PLANK"][0]
+        return {"exerciseSets": [
+            {"setType": "ACTIVE", "repetitionCount": 10, "weight": 50000.0, "duration": 40.0,
+             "exercises": [{"category": lat, "name": "LAT_PULLDOWN", "probability": 90}], "wktStepIndex": kroki[lat]},
+            {"setType": "REST", "duration": 90.0, "exercises": []},
+            {"setType": "ACTIVE", "repetitionCount": 8, "weight": 50000.0, "duration": 35.0,
+             "exercises": [{"category": lat, "name": "LAT_PULLDOWN", "probability": 90}], "wktStepIndex": kroki[lat]},
+            {"setType": "ACTIVE", "repetitionCount": None, "weight": None, "duration": 45.0,
+             "exercises": [{"category": "PLANK", "name": "PLANK", "probability": 99}], "wktStepIndex": kroki["PLANK"]},
+        ]}
+
+    def download_activity(self, aid, dl_fmt=None):
+        return b"PK\x03\x04zip"
+
+
+class TestMcpPlanVsWykonanie(BazaMcp):
+    def setUp(self):
+        super().setUp()
+        garmin_io._nowy_klient = AtrapaSila
+
+    def test_serie(self):
+        _, tekst = self.narzedzie("serie", activity_id=25162650914)
+        d = json.loads(tekst)
+        self.assertEqual(d["podsumowanie"], {"serie_aktywne": 3, "powtorzenia": 18, "tonaz_kg": 900.0})
+        lat = [c for c in d["cwiczenia"] if c["cwiczenie"].endswith("LAT_PULLDOWN")][0]
+        self.assertEqual((lat["serie"], lat["ciezar_max_kg"], lat["tonaz_kg"]), (2, 50.0, 900.0))
+        self.assertEqual(d["serie"][1]["typ"], "przerwa")
+        self.assertIsNone(d["serie"][1]["powtorzenia"])          # brak danych = null, klucz jest
+
+    def test_plan_treningu(self):
+        _, tekst = self.narzedzie("plan_treningu", workout_id=1769460084)
+        d = json.loads(tekst)
+        self.assertEqual(d["nazwa"], "Siła A")
+        blok = [k for k in d["kroki"] if k["typ"] == "powtorz"][0]
+        self.assertEqual(blok["powtorzenia_bloku"], 2)
+        cw = blok["kroki"][0]
+        self.assertEqual((cw["powtorzenia"], cw["ciezar_kg"]), (10, 50.0))
+        self.assertNotIn("_kategoria", cw)
+
+    def test_plan_vs_wykonanie_sila(self):
+        _, tekst = self.narzedzie("plan_vs_wykonanie", activity_id=25162650914)
+        d = json.loads(tekst)
+        self.assertEqual(d["rodzaj"], "silowy")
+        self.assertEqual(d["dopasowanie_krokow"], "fit")
+        lat = [k for k in d["kroki"] if k["cwiczenie_plan"] and "PLANK" not in k["cwiczenie_plan"]][0]
+        self.assertEqual((lat["serie_plan"], lat["serie_wykonane"], lat["powtorzenia_wykonane"]), (2, 2, [10, 8]))
+        self.assertEqual(lat["odchylenie"], ["powtórzenia"])      # 18 zamiast 20
+        plank = [k for k in d["kroki"] if k["cwiczenie_plan"] and "PLANK" in k["cwiczenie_plan"]][0]
+        self.assertEqual(plank["serie_wykonane"], 1)
+
+    def test_plan_vs_wykonanie_bez_planu(self):
+        w, tekst = self.narzedzie("plan_vs_wykonanie", activity_id=25145798508)
+        self.assertNotIn("isError", w)
+        self.assertIsNone(json.loads(tekst)["workout_id"])
+
+    def test_pobierz_fit_link(self):
+        _, tekst = self.narzedzie("pobierz_fit", activity_id=25162650914, zasil_baze=True)
+        d = json.loads(tekst)
+        link = d["pliki"][0]["link"]
+        self.assertIn("/fit/", link)
+        self.assertIn("Niewykonane", d["zasil_baze"])
+        r = self.c.get(link.replace("http://localhost", ""))
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("25162650914_ACTIVITY.zip", r.headers["Content-Disposition"])
+        self.assertEqual(self.c.get("/fit/podrobka").status_code, 403)
+
+    def test_surowe_dane(self):
+        _, tekst = self.narzedzie("surowe_dane", zrodlo="trening_planowany", id=1769460084)
+        self.assertEqual(json.loads(tekst)["workoutName"], "Siła A")
+        w, tekst = self.narzedzie("surowe_dane", zrodlo="cos", id=1)
+        self.assertTrue(w["isError"])
+
+
+class TestPlanVsWykonanieBieg(unittest.TestCase):
+    def test_okrazenia(self):
+        w = plan.wczytaj(json.dumps({"treningi": [{"nazwa": "B", "sport": "bieg", "kroki": [
+            {"typ": "rozgrzewka", "czas": "10:00"},
+            {"powtorz": 2, "kroki": [{"typ": "interwal", "dystans": "1km", "cel": "HR 160-170"},
+                                    {"typ": "przerwa", "czas": "2:00"}]}]}]}))[0]["w"]
+
+        class K:
+            def get_activity(self, aid):
+                return {"activityTypeDTO": {"typeKey": "running"}, "associatedWorkoutId": 5, "summaryDTO": {}}
+
+            def get_workout_by_id(self, wid):
+                return w
+
+            def get_activity_splits(self, aid):
+                return {"lapDTOs": [{"duration": 600, "distance": 1800, "averageHR": 130},
+                                    {"duration": 240, "distance": 1000, "averageHR": 165, "averageSpeed": 4.17},
+                                    {"duration": 120, "distance": 300, "averageHR": 140},
+                                    {"duration": 250, "distance": 1000, "averageHR": 178},
+                                    {"duration": 120, "distance": 300, "averageHR": 140}]}
+        d = garmin_dane.plan_vs_wykonanie(K(), 1)
+        self.assertEqual(d["rodzaj"], "wytrzymalosc")
+        self.assertEqual(len(d["kroki"]), 5)
+        self.assertIsNone(d["uwaga"])
+        self.assertIsNone(d["kroki"][1]["odchylenie"])
+        self.assertEqual(d["kroki"][1]["tempo_min_km"], "4:00")
+        self.assertEqual(d["kroki"][3]["odchylenie"], ["poza celem"])
 
 
 if __name__ == "__main__":

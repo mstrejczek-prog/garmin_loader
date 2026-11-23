@@ -355,3 +355,333 @@ def strefy_garmin(klient) -> dict:
         except Exception as e:  # noqa: BLE001
             wynik[nazwa + "_blad"] = str(e)[:200]
     return wynik
+
+
+# ----------------------------------------------------------------- serie siłowe, plan treningu, plan vs wykonanie
+
+TYPY_KROKU = {"warmup": "rozgrzewka", "cooldown": "schlodzenie", "interval": "interwal", "recovery": "przerwa",
+              "rest": "odpoczynek", "repeat": "powtorz", "other": "inny", "main": "glowny"}
+
+
+def _kg(v):
+    """Ciężar z Garmina -> kg. Garmin podaje go raz w gramach (20000.0), raz w kg - rozróżniamy po wielkości."""
+    if not isinstance(v, (int, float)) or v < 0:
+        return None
+    return round(v / 1000.0, 2) if v > 400 else round(float(v), 2)
+
+
+def _cwiczenie(kat, nazwa) -> str | None:
+    if not kat and not nazwa:
+        return None
+    if kat and nazwa and nazwa != kat:
+        return f"{kat} / {nazwa}"
+    return kat or nazwa
+
+
+def _id(x, opis: str) -> str:
+    s = str(x if x is not None else "").strip()
+    if not s.isdigit():
+        raise BladDanych(f"{opis} musi być liczbą")
+    return s
+
+
+def serie(klient, activity_id) -> dict:
+    """Serie siłowe aktywności (ćwiczenie, powtórzenia, ciężar, czas) + podsumowanie per ćwiczenie i tonaż."""
+    aid = _id(activity_id, "activity_id")
+    dane = klient.get_activity_exercise_sets(aid) or {}
+    surowe = dane.get("exerciseSets") if isinstance(dane, dict) else dane
+    lista, per = [], {}
+    for i, s in enumerate(surowe or [], 1):
+        ex = (s.get("exercises") or [{}])
+        ex = max(ex, key=lambda e: e.get("probability") or 0) if ex else {}
+        aktywna = str(s.get("setType") or "").upper() == "ACTIVE"
+        wpis = {
+            "nr": i,
+            "typ": "aktywna" if aktywna else "przerwa",
+            "cwiczenie": _cwiczenie(ex.get("category"), ex.get("name")) if aktywna else None,
+            "powtorzenia": s.get("repetitionCount") if aktywna else None,
+            "ciezar_kg": _kg(s.get("weight")) if aktywna else None,
+            "czas_s": _r(s.get("duration"), 0),
+            "start": s.get("startTime"),
+            "krok_planu": s.get("wktStepIndex"),
+        }
+        lista.append(wpis)
+        if aktywna:
+            p = per.setdefault(wpis["cwiczenie"] or "nieznane", {"serie": 0, "powtorzenia": 0, "ciezary": [], "tonaz_kg": 0.0})
+            p["serie"] += 1
+            p["powtorzenia"] += wpis["powtorzenia"] or 0
+            if wpis["ciezar_kg"]:
+                p["ciezary"].append(wpis["ciezar_kg"])
+                p["tonaz_kg"] += (wpis["powtorzenia"] or 0) * wpis["ciezar_kg"]
+    cwiczenia = []
+    for nazwa, p in per.items():
+        c = p.pop("ciezary")
+        cwiczenia.append({"cwiczenie": nazwa, **p, "tonaz_kg": round(p["tonaz_kg"], 1),
+                          "ciezar_max_kg": max(c) if c else None,
+                          "ciezar_sr_kg": round(sum(c) / len(c), 1) if c else None})
+    aktywne = [s for s in lista if s["typ"] == "aktywna"]
+    return {
+        "activity_id": int(aid),
+        "podsumowanie": {"serie_aktywne": len(aktywne),
+                         "powtorzenia": sum(s["powtorzenia"] or 0 for s in aktywne),
+                         "tonaz_kg": round(sum(c["tonaz_kg"] for c in cwiczenia), 1)},
+        "cwiczenia": cwiczenia,
+        "serie": lista,
+    }
+
+
+def _mps_na_tempo(v, na=1000.0):
+    if not isinstance(v, (int, float)) or v <= 0:
+        return None
+    s = round(na / v)
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _cel(typ: dict | None, v1, v2, strefa, sport: str) -> str | None:
+    klucz = (typ or {}).get("workoutTargetTypeKey")
+    if not klucz or klucz == "no.target":
+        return None
+    if klucz == "heart.rate.zone":
+        return f"HR strefa {strefa}" if strefa else f"HR {v1:g}-{v2:g} bpm" if v1 and v2 else "HR"
+    if klucz == "power.zone":
+        return f"moc strefa {strefa}" if strefa else f"moc {v1:g}-{v2:g} W" if v1 and v2 else "moc"
+    if klucz == "pace.zone":
+        na = 100.0 if sport.endswith("swimming") else 1000.0
+        jedn = "/100m" if na == 100 else "/km"
+        a, b = _mps_na_tempo(v1, na), _mps_na_tempo(v2, na)
+        return f"tempo {a}-{b} {jedn}" if a and b else "tempo"
+    if klucz == "speed.zone":
+        return f"prędkość {v1 * 3.6:.1f}-{v2 * 3.6:.1f} km/h" if v1 and v2 else "prędkość"
+    if klucz == "cadence":
+        return f"kadencja {v1:g}-{v2:g}" if v1 and v2 else "kadencja"
+    if klucz == "swim.css.offset":
+        return f"CSS {v1:+g} s/100m" if v1 is not None else "CSS"
+    return klucz
+
+
+def _krok_planu(s: dict, sport: str) -> dict:
+    end = g(s, "endCondition.conditionTypeKey")
+    val = s.get("endConditionValue")
+    return {
+        "nr_kroku": s.get("stepOrder"),
+        "typ": TYPY_KROKU.get(g(s, "stepType.stepTypeKey"), g(s, "stepType.stepTypeKey")),
+        "cwiczenie": _cwiczenie(s.get("category"), s.get("exerciseName")),
+        "powtorzenia": int(val) if end == "reps" and val else None,
+        "ciezar_kg": _kg(s.get("weightValue")),
+        "czas_s": _r(val, 0) if end == "time" else None,
+        "dystans_m": _r(val, 0) if end == "distance" else None,
+        "przycisk": True if end == "lap.button" else None,
+        "cel": _cel(s.get("targetType"), s.get("targetValueOne"), s.get("targetValueTwo"), s.get("zoneNumber"), sport),
+        "cel_dodatkowy": _cel(s.get("secondaryTargetType"), s.get("secondaryTargetValueOne"),
+                              s.get("secondaryTargetValueTwo"), s.get("secondaryZoneNumber"), sport),
+        "notatka": s.get("description"),
+        "_kategoria": s.get("category"),
+    }
+
+
+def _kroki(lista, sport, mnoznik=1):
+    """Kroki Garmina -> (drzewo do pokazania, płaska lista kroków wykonawczych z krotnością)."""
+    drzewo, plaskie = [], []
+    for s in sorted(lista or [], key=lambda x: x.get("stepOrder") or 0):
+        if s.get("type") == "RepeatGroupDTO" or g(s, "stepType.stepTypeKey") == "repeat":
+            n = int(s.get("numberOfIterations") or 1)
+            d, p = _kroki(s.get("workoutSteps"), sport, mnoznik * n)
+            drzewo.append({"nr_kroku": s.get("stepOrder"), "typ": "powtorz", "powtorzenia_bloku": n, "kroki": d})
+            plaskie += p
+        else:
+            k = _krok_planu(s, sport)
+            plaskie.append({**k, "_krotnosc": mnoznik})
+            drzewo.append({x: y for x, y in k.items() if not x.startswith("_")})
+    return drzewo, plaskie
+
+
+def _indeksy_fit(lista, wynik=None):
+    """Kolejność kroków w pliku FIT (krok powtórzenia stoi PO swoich dzieciach) -> lista stepOrder."""
+    wynik = [] if wynik is None else wynik
+    for s in sorted(lista or [], key=lambda x: x.get("stepOrder") or 0):
+        if s.get("type") == "RepeatGroupDTO" or g(s, "stepType.stepTypeKey") == "repeat":
+            _indeksy_fit(s.get("workoutSteps"), wynik)
+        wynik.append(s.get("stepOrder"))
+    return wynik
+
+
+def _workout(klient, workout_id) -> dict:
+    return klient.get_workout_by_id(_id(workout_id, "workout_id")) or {}
+
+
+def plan_treningu(klient, workout_id, _w: dict | None = None) -> dict:
+    """Kroki zaplanowanego treningu (biblioteka Treningi w Garmin Connect)."""
+    w = _w if _w is not None else _workout(klient, workout_id)
+    sport = g(w, "sportType.sportTypeKey") or ""
+    kroki = []
+    for seg in w.get("workoutSegments") or []:
+        d, _ = _kroki(seg.get("workoutSteps"), sport)
+        kroki += d
+    return {
+        "workout_id": w.get("workoutId"),
+        "nazwa": w.get("workoutName"),
+        "sport": sport or None,
+        "opis": w.get("description"),
+        "czas_szac_min": _min(w.get("estimatedDurationInSecs")),
+        "dystans_szac_km": _r((w.get("estimatedDistanceInMeters") or 0) / 1000, 2) if w.get("estimatedDistanceInMeters") else None,
+        "kroki": kroki,
+    }
+
+
+def _odchylenie(plan, wykon, prog=0.1):
+    if plan in (None, 0) or wykon is None:
+        return None
+    return abs(wykon - plan) / plan >= prog
+
+
+def _w_celu(cel: str | None, hr, moc) -> bool | None:
+    """Czy średnie HR/moc mieszczą się w celu podanym liczbami (strefy numeryczne pomijamy)."""
+    import re
+    if not cel:
+        return None
+    m = re.match(r"(HR|moc) (\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)", cel)
+    if not m:
+        return None
+    wart = hr if m.group(1) == "HR" else moc
+    if wart is None:
+        return None
+    return float(m.group(2)) * 0.97 <= wart <= float(m.group(3)) * 1.03
+
+
+def plan_vs_wykonanie(klient, activity_id) -> dict:
+    aid = _id(activity_id, "activity_id")
+    a = klient.get_activity(aid) or {}
+    s = a.get("summaryDTO") or {}
+    wid = a.get("associatedWorkoutId") or s.get("associatedWorkoutId") or g(a, "metadataDTO.associatedWorkoutId")
+    sport = g(a, "activityTypeDTO.typeKey") or ""
+    naglowek = {"activity_id": int(aid), "nazwa": a.get("activityName"), "sport": sport or None,
+                "start": s.get("startTimeLocal")}
+    if not wid:
+        return {**naglowek, "workout_id": None,
+                "komunikat": "Ta aktywność nie była wykonana z zaplanowanego treningu (brak associatedWorkoutId), "
+                             "więc nie ma z czym jej porównać. Użyj narzędzi trening/serie."}
+    w = _workout(klient, wid)
+    plan = plan_treningu(klient, wid, w)
+    plaskie = []
+    for seg in w.get("workoutSegments") or []:
+        plaskie += _kroki(seg.get("workoutSteps"), plan["sport"] or "")[1]
+    wynik = {**naglowek, "workout_id": int(wid), "plan_nazwa": plan["nazwa"]}
+
+    if "strength" in sport or (plan["sport"] or "").startswith("strength"):
+        sr = serie(klient, aid)
+        aktywne = [x for x in sr["serie"] if x["typ"] == "aktywna"]
+        po_order = {k["nr_kroku"]: k for k in plaskie}
+        kolejnosc_fit = []
+        for seg in w.get("workoutSegments") or []:
+            kolejnosc_fit += _indeksy_fit(seg.get("workoutSteps"))
+        # wktStepIndex: sprawdzamy obie konwencje numeracji i wybieramy tę, w której zgadza się więcej kategorii
+        mapy = {"stepOrder-1": lambda i: i + 1,
+                "fit": lambda i: kolejnosc_fit[i] if 0 <= i < len(kolejnosc_fit) else None}
+
+        def trafienia(f):
+            n = 0
+            for x in aktywne:
+                k = po_order.get(f(x["krok_planu"])) if x["krok_planu"] is not None else None
+                if k and k["_kategoria"] and x["cwiczenie"] and x["cwiczenie"].split(" / ")[0] == k["_kategoria"]:
+                    n += 1
+            return n
+        nazwa_mapy = max(mapy, key=lambda m: trafienia(mapy[m]))
+        f = mapy[nazwa_mapy]
+        wykonane: dict[int, list] = {}
+        bez_kroku = []
+        for x in aktywne:
+            nr = f(x["krok_planu"]) if x["krok_planu"] is not None else None
+            if nr in po_order:
+                wykonane.setdefault(nr, []).append(x)
+            else:
+                bez_kroku.append(x)
+        tabela = []
+        for k in plaskie:
+            if not k["cwiczenie"] and not k["powtorzenia"]:
+                continue                                     # rozgrzewka/odpoczynek bez ćwiczenia
+            sx = wykonane.get(k["nr_kroku"], [])
+            pow_ = [x["powtorzenia"] for x in sx if x["powtorzenia"] is not None]
+            cie = [x["ciezar_kg"] for x in sx if x["ciezar_kg"]]
+            plan_pow = (k["powtorzenia"] or 0) * k["_krotnosc"] if k["powtorzenia"] else None
+            wiersz = {
+                "nr_kroku": k["nr_kroku"], "cwiczenie_plan": k["cwiczenie"],
+                "cwiczenie_wykonane": sx[0]["cwiczenie"] if sx else None,
+                "serie_plan": k["_krotnosc"], "serie_wykonane": len(sx),
+                "powtorzenia_plan_seria": k["powtorzenia"], "powtorzenia_wykonane": pow_ or None,
+                "ciezar_plan_kg": k["ciezar_kg"], "ciezar_wykonany_kg": cie or None,
+            }
+            odch = []
+            if len(sx) != k["_krotnosc"]:
+                odch.append("liczba serii")
+            if plan_pow and _odchylenie(plan_pow, sum(pow_)):
+                odch.append("powtórzenia")
+            if k["ciezar_kg"] and cie and _odchylenie(k["ciezar_kg"], sum(cie) / len(cie), 0.05):
+                odch.append("ciężar")
+            wiersz["odchylenie"] = odch or None
+            tabela.append(wiersz)
+        wynik.update(rodzaj="silowy", dopasowanie_krokow=nazwa_mapy, kroki=tabela,
+                     serie_bez_kroku_planu=bez_kroku or None, podsumowanie=sr["podsumowanie"])
+        return wynik
+
+    # wytrzymałość: kolejne kroki planu (rozwinięte powtórzenia) vs kolejne okrążenia
+    rozwiniete = [k for k in plaskie for _ in range(k["_krotnosc"])] if all(
+        k["_krotnosc"] <= 50 for k in plaskie) else plaskie
+    try:
+        laps = (klient.get_activity_splits(aid) or {}).get("lapDTOs") or []
+    except Exception as e:  # noqa: BLE001
+        return {**wynik, "komunikat": f"Nie udało się pobrać okrążeń: {str(e)[:200]}", "plan": plan}
+    tabela = []
+    for i in range(max(len(rozwiniete), len(laps))):
+        k = rozwiniete[i] if i < len(rozwiniete) else None
+        l = _okrazenie(laps[i]) if i < len(laps) else None
+        czas_w = round(l["czas_min"] * 60) if l and l.get("czas_min") else None
+        dyst_w = round(l["dystans_km"] * 1000) if l and l.get("dystans_km") else None
+        wiersz = {
+            "nr": i + 1,
+            "krok_plan": (f"{k['typ']}" + (f" {k['cel']}" if k and k["cel"] else "")) if k else None,
+            "czas_plan_s": k["czas_s"] if k else None, "czas_wykonany_s": czas_w,
+            "dystans_plan_m": k["dystans_m"] if k else None, "dystans_wykonany_m": dyst_w,
+            "cel": k["cel"] if k else None,
+            "hr_sr": l.get("hr_sr") if l else None, "moc_sr_w": l.get("moc_sr_w") if l else None,
+            "tempo_min_km": _mps_na_tempo(l["predkosc_sr_kmh"] / 3.6) if l and l.get("predkosc_sr_kmh") else None,
+        }
+        odch = []
+        if not k or not l:
+            odch.append("brak kroku planu" if not k else "brak okrążenia")
+        else:
+            if _odchylenie(k["czas_s"], czas_w):
+                odch.append("czas")
+            if _odchylenie(k["dystans_m"], dyst_w, 0.05):
+                odch.append("dystans")
+            if _w_celu(k["cel"], wiersz["hr_sr"], wiersz["moc_sr_w"]) is False:
+                odch.append("poza celem")
+        wiersz["odchylenie"] = odch or None
+        tabela.append(wiersz)
+    uwaga = None
+    if len(laps) != len(rozwiniete):
+        uwaga = (f"Liczba okrążeń ({len(laps)}) różni się od liczby kroków planu ({len(rozwiniete)}) - "
+                 "np. ręczne naciśnięcie LAP albo pominięty krok; dopasowanie po kolejności może być przesunięte.")
+    wynik.update(rodzaj="wytrzymalosc", kroki=tabela, uwaga=uwaga)
+    return wynik
+
+
+# ----------------------------------------------------------------- surowe odpowiedzi (diagnostyka)
+
+ZRODLA_SUROWE = {
+    "aktywnosc": ("get_activity", "activity_id"),
+    "serie": ("get_activity_exercise_sets", "activity_id"),
+    "okrazenia": ("get_activity_splits", "activity_id"),
+    "okrazenia_typowane": ("get_activity_typed_splits", "activity_id"),
+    "strefy_hr": ("get_activity_hr_in_timezones", "activity_id"),
+    "strefy_mocy": ("get_activity_power_in_timezones", "activity_id"),
+    "pogoda": ("get_activity_weather", "activity_id"),
+    "sprzet": ("get_activity_gear", "activity_id"),
+    "trening_planowany": ("get_workout_by_id", "workout_id"),
+}
+
+
+def surowe(klient, zrodlo: str, ident) -> Any:
+    if zrodlo not in ZRODLA_SUROWE:
+        raise BladDanych(f"Nieznane źródło „{zrodlo}”. Dostępne: {', '.join(ZRODLA_SUROWE)}")
+    metoda, opis = ZRODLA_SUROWE[zrodlo]
+    return przytnij(getattr(klient, metoda)(_id(ident, opis)), 30000)

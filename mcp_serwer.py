@@ -23,7 +23,7 @@ import os
 import threading
 from typing import Any, Callable
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request, url_for
 
 import garmin_dane
 import garmin_io
@@ -32,6 +32,7 @@ import ustawienia
 
 log = logging.getLogger("garmin_plan_loader.mcp")
 
+MAX_ODPOWIEDZ = 60000                               # znaków na odpowiedź narzędzia (trafia do kontekstu modelu)
 WERSJE_PROTOKOLU = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 INSTRUKCJE = """Connector do Garmin Connect użytkownika (triathlon: bieg, rower, pływanie, siła).
@@ -40,6 +41,7 @@ Plany na zegarek: najpierw `format_planu` (format JSON + strefy użytkownika), p
 i pokaż użytkownikowi podgląd, a `wyslij_plan` wywołaj dopiero po jego akceptacji. Wysyłka jest
 powtarzalna: trening o tej samej nazwie nie jest dublowany, a zmiana daty przestawia wpis w kalendarzu.
 Przed planowaniem warto sprawdzić `kalendarz`, `aktywnosci`, `wellness` i `gotowosc`.
+Ocena wykonania: `plan_vs_wykonanie` (plan z kalendarza vs aktywność), `serie` (siła), `plan_treningu`.
 
 Dane: wartości pochodzą z Garmin Connect; własne wyliczenia i szacunki zaznaczaj jako takie.
 Daty w formacie RRRR-MM-DD, domyślnie liczone od dzisiaj."""
@@ -53,7 +55,10 @@ class BladNarzedzia(Exception):
 
 _klient = None
 _klient_lock = threading.RLock()
-_odszyfruj: Callable[[str, Any], Any] | None = None
+_odszyfruj: Callable[..., Any] | None = None
+_szyfruj: Callable[[str, Any], str] | None = None
+CZAS_LINKU_FIT = 3600                               # link do pobrania FIT ważny godzinę
+MAX_FIT_NARAZ = 20
 
 
 def _ust() -> dict:
@@ -190,6 +195,57 @@ def t_gotowosc(a: dict) -> dict:
     return _z_garminem(lambda k: garmin_dane.gotowosc(k, a.get("data")))
 
 
+def t_serie(a: dict) -> dict:
+    return _z_garminem(lambda k: garmin_dane.serie(k, a.get("activity_id")))
+
+
+def t_plan_treningu(a: dict) -> Any:
+    if a.get("surowe"):
+        return _z_garminem(lambda k: garmin_dane.surowe(k, "trening_planowany", a.get("workout_id")))
+    return _z_garminem(lambda k: garmin_dane.plan_treningu(k, a.get("workout_id")))
+
+
+def t_plan_vs_wykonanie(a: dict) -> dict:
+    return _z_garminem(lambda k: garmin_dane.plan_vs_wykonanie(k, a.get("activity_id")))
+
+
+def t_surowe_dane(a: dict) -> Any:
+    return _z_garminem(lambda k: garmin_dane.surowe(k, str(a.get("zrodlo") or ""), a.get("id")))
+
+
+def t_pobierz_fit(a: dict) -> dict:
+    """Linki do oryginalnych plików FIT (serwer działa zdalnie - nie ma dostępu do dysku użytkownika)."""
+    if _szyfruj is None:
+        raise BladNarzedzia("Serwer nie obsługuje pobierania plików")
+    if a.get("activity_id"):
+        ids = [str(a["activity_id"]).strip()]
+        if not ids[0].isdigit():
+            raise BladNarzedzia("activity_id musi być liczbą")
+        opisy = {ids[0]: None}
+    else:
+        lista = _z_garminem(lambda k: garmin_dane.aktywnosci(k, a.get("od"), a.get("do"), a.get("sport")))
+        if len(lista) > MAX_FIT_NARAZ:
+            raise BladNarzedzia(f"W tym okresie jest {len(lista)} aktywności - najwyżej {MAX_FIT_NARAZ} naraz, "
+                                "zawęź zakres dat albo sport")
+        ids = [str(x["id"]) for x in lista]
+        opisy = {str(x["id"]): f"{x.get('start', '')[:10]} {x.get('nazwa') or ''}".strip() for x in lista}
+    baza = request.url_root.rstrip("/")
+    pliki = [{"activity_id": int(i), "opis": opisy.get(i), "plik": f"{i}_ACTIVITY.zip",
+              "link": baza + url_for("mcp.pobierz_plik_fit", token=_szyfruj("fit", i))} for i in ids]
+    wynik = {
+        "pliki": pliki,
+        "wazne_minut": CZAS_LINKU_FIT // 60,
+        "jak_uzyc": ("Pokaż użytkownikowi linki - otwarte w przeglądarce pobierają zip z oryginalnym plikiem FIT "
+                     "(nazwa <activity_id>_ACTIVITY.fit, zgodna z ingest_fit.py). Zapisz je w folderze "
+                     "„Dane treningowe/FIT (surowe pliki z Garmina)” i uruchom lokalnie: "
+                     "python ingest_fit.py treningi.duckdb <pobrane pliki .zip>"),
+    }
+    if a.get("zasil_baze"):
+        wynik["zasil_baze"] = ("Niewykonane: serwer konektora działa zdalnie (Render) i nie ma dostępu do dysku "
+                               "ani do treningi.duckdb. Uruchom ingest_fit.py lokalnie na pobranych plikach.")
+    return wynik
+
+
 _DATA = {"type": "string", "description": "RRRR-MM-DD"}
 _PLAN = {"description": "Plan w formacie z narzędzia format_planu: obiekt {\"treningi\": [...]} "
                         "(może też zawierać \"strefy\", \"moc\", \"ftp\").",
@@ -266,6 +322,49 @@ NARZEDZIA: dict[str, dict] = {
                 "i VO2max na dany dzień (domyślnie dziś).",
         "schema": {"type": "object", "properties": {"data": _DATA}},
     },
+    "serie": {
+        "fn": t_serie, "ro": True,
+        "opis": "Serie treningu siłowego w kolejności wykonania (ćwiczenie, powtórzenia, ciężar w kg, czas, "
+                "krok planu) + podsumowanie per ćwiczenie (serie, powtórzenia, ciężar max/średni, tonaż).",
+        "schema": {"type": "object", "properties": {
+            "activity_id": {"type": ["string", "integer"], "description": "id z narzędzia aktywnosci"}},
+            "required": ["activity_id"]},
+    },
+    "plan_treningu": {
+        "fn": t_plan_treningu, "ro": True,
+        "opis": "Kroki zaplanowanego treningu z biblioteki Garmin Connect (workout_id z narzędzia kalendarz): "
+                "typ, ćwiczenie, powtórzenia, ciężar, czas/dystans, cel (strefa HR, W, tempo), bloki powtórzeń. "
+                "surowe=true zwraca pełny JSON Garmina.",
+        "schema": {"type": "object", "properties": {
+            "workout_id": {"type": ["string", "integer"]}, "surowe": {"type": "boolean"}},
+            "required": ["workout_id"]},
+    },
+    "plan_vs_wykonanie": {
+        "fn": t_plan_vs_wykonanie, "ro": True,
+        "opis": "Zestawia wykonaną aktywność z treningiem, z którego była zrobiona (associatedWorkoutId): "
+                "siła - serie/powtórzenia/ciężar per krok planu; bieg/rower/pływanie - kroki planu vs okrążenia "
+                "(czas, dystans, HR, moc, tempo względem celu). Każdy wiersz ma flagę odchylenia.",
+        "schema": {"type": "object", "properties": {
+            "activity_id": {"type": ["string", "integer"]}}, "required": ["activity_id"]},
+    },
+    "pobierz_fit": {
+        "fn": t_pobierz_fit, "ro": True,
+        "opis": "Linki (ważne 1 h) do oryginalnych plików FIT aktywności - jednej (activity_id) albo z okresu "
+                "(od, do, opcjonalnie sport; najwyżej 20). Serwer działa zdalnie, więc nie zapisuje na dysk "
+                "użytkownika ani nie zasila treningi.duckdb - pokaż linki użytkownikowi.",
+        "schema": {"type": "object", "properties": {
+            "activity_id": {"type": ["string", "integer"]}, "od": _DATA, "do": _DATA,
+            "sport": {"type": "string"}, "zasil_baze": {"type": "boolean"}}},
+    },
+    "surowe_dane": {
+        "fn": t_surowe_dane, "ro": True,
+        "opis": "Diagnostyka: surowa odpowiedź Garmina (przycięta do ~30 kB) dla jednego źródła: "
+                + ", ".join(garmin_dane.ZRODLA_SUROWE) + ". Używaj, gdy zwięzłe narzędzia czegoś nie pokazują.",
+        "schema": {"type": "object", "properties": {
+            "zrodlo": {"type": "string", "enum": list(garmin_dane.ZRODLA_SUROWE)},
+            "id": {"type": ["string", "integer"], "description": "activity_id albo workout_id"}},
+            "required": ["zrodlo", "id"]},
+    },
 }
 
 
@@ -292,6 +391,8 @@ def _wywolaj(nazwa: str, argumenty: dict) -> dict:
         log.exception("narzędzie %s", nazwa)
         return {"content": [{"type": "text", "text": f"Błąd serwera: {e}"}], "isError": True}
     tekst = wynik if isinstance(wynik, str) else json.dumps(wynik, ensure_ascii=False, default=str)
+    if len(tekst) > MAX_ODPOWIEDZ:
+        tekst = tekst[:MAX_ODPOWIEDZ] + f"\n…[przycięto: odpowiedź miała {len(tekst)} znaków - zawęź zapytanie]"
     return {"content": [{"type": "text", "text": tekst}]}
 
 
@@ -370,7 +471,25 @@ def mcp_inne():
     return Response(status=405, headers={"Allow": "POST"})
 
 
-def zarejestruj(app, odszyfruj) -> None:
-    global _odszyfruj
-    _odszyfruj = odszyfruj
+@bp.route("/fit/<token>", methods=["GET"])
+def pobierz_plik_fit(token):
+    """Pobranie oryginalnego FIT z linku z narzędzia pobierz_fit (link podpisany, ważny godzinę)."""
+    aid = _odszyfruj("fit", token, ttl=CZAS_LINKU_FIT) if _odszyfruj else None
+    if not aid or not str(aid).isdigit():
+        return jsonify(blad="Link wygasł albo jest nieprawidłowy - poproś Claude o nowy."), 403
+    try:
+        from garminconnect import Garmin
+        dane = _z_garminem(lambda k: k.download_activity(
+            str(aid), dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL))
+    except BladNarzedzia as e:
+        return jsonify(blad=str(e)), 502
+    zip_ = isinstance(dane, (bytes, bytearray)) and dane[:2] == b"PK"
+    nazwa = f"{aid}_ACTIVITY.zip" if zip_ else f"{aid}_ACTIVITY.fit"
+    return Response(bytes(dane), mimetype="application/zip" if zip_ else "application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="{nazwa}"', "Cache-Control": "no-store"})
+
+
+def zarejestruj(app, odszyfruj, szyfruj=None) -> None:
+    global _odszyfruj, _szyfruj
+    _odszyfruj, _szyfruj = odszyfruj, szyfruj
     app.register_blueprint(bp)

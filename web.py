@@ -321,7 +321,7 @@ def api_wyslij():
                     headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"})
 
 
-mcp_serwer.zarejestruj(app, odszyfruj)          # connector dla Claude: POST /mcp
+mcp_serwer.zarejestruj(app, odszyfruj, szyfruj)          # connector dla Claude: POST /mcp
 
 
 if __name__ == "__main__":
