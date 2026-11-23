@@ -458,6 +458,7 @@ class TestMcpP2(BazaMcp):
         self.assertIsNone(d["dynamika_biegu"])
         self.assertEqual((d["plywanie"]["basen_m"], d["plywanie"]["swolf_sr"]), (25, 84))
         self.assertEqual((d["plywanie"]["tempo_100m"], d["plywanie"]["tempo_100m_z_przerwami"]), ("3:18", "3:20"))
+        self.assertEqual(d["plywanie"]["tempo_100m_mediana"], "3:18")
         self.assertEqual(d["okrazenia"][1], {"nr": 2, "typ": "przerwa", "czas_min": 2.0})
         o = d["okrazenia"][0]
         self.assertEqual((o["styl"], o["dlugosci"], o["tempo_100m"], o["swolf"]), ("freestyle", 4, "3:20", 60))

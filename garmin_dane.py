@@ -266,6 +266,11 @@ def trening(klient, activity_id, dlugosci: bool = False) -> dict:
             dl = [x for l in laps for x in (l.get("lengthDTOs") or []) if x.get("distance") and x.get("duration")]
             if dl:
                 wynik["plywanie"]["tempo_100m"] = _tempo_100m(sum(x["distance"] for x in dl) / sum(x["duration"] for x in dl))
+                # mediana z długości: odporna na odpoczynek przy ścianie bez naciśnięcia przycisku
+                # (zegarek liczy wtedy długość 25 m trwającą np. 3 minuty)
+                predk = sorted(x["distance"] / x["duration"] for x in dl)
+                m = len(predk) // 2
+                wynik["plywanie"]["tempo_100m_mediana"] = _tempo_100m(predk[m] if len(predk) % 2 else (predk[m - 1] + predk[m]) / 2)
         if plyw and dlugosci:
             wynik["dlugosci"] = [_dlugosc(x) for l in laps for x in (l.get("lengthDTOs") or [])][:200]
     except Exception as e:  # noqa: BLE001 - brak okrążeń nie przekreśla reszty

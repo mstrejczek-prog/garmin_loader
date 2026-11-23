@@ -452,7 +452,8 @@ NARZEDZIA: dict[str, dict] = {
         "fn": t_trening, "ro": True,
         "opis": "Szczegóły jednej aktywności: podsumowanie, RPE i samopoczucie wpisane po treningu, zgodność z planem, "
                 "okrążenia (czas, dystans, HR, moc śr/max/NP, tempo, kadencja; w pływaniu styl, długości, SWOLF, "
-                "tempo /100 m), czas w strefach HR i mocy, pływanie, dynamika biegu, pogoda (°C, km/h), sprzęt. "
+                "tempo /100 m), czas w strefach HR i mocy, pływanie (tempo_100m_mediana jest odporne na odpoczynek przy "
+                "ścianie bez naciśnięcia przycisku), dynamika biegu, pogoda (°C, km/h), sprzęt. "
                 "Sekcje, które nie dotyczą sportu, są null. dlugosci=true dodaje każdą długość basenu. "
                 "surowe=true zwraca pełną odpowiedź Garmina (przyciętą).",
         "schema": {"type": "object", "properties": {
