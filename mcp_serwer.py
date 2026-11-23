@@ -213,7 +213,8 @@ def t_plan_vs_wykonanie(a: dict) -> dict:
 
 
 def t_surowe_dane(a: dict) -> Any:
-    return _z_garminem(lambda k: garmin_dane.surowe(k, str(a.get("zrodlo") or ""), a.get("id")))
+    return _z_garminem(lambda k: garmin_dane.surowe(k, str(a.get("zrodlo") or ""), a.get("id"),
+                                                    a.get("od"), a.get("do")))
 
 
 def _refresh_google() -> str | None:
@@ -507,12 +508,16 @@ NARZEDZIA: dict[str, dict] = {
     },
     "surowe_dane": {
         "fn": t_surowe_dane, "ro": True,
-        "opis": "Diagnostyka: surowa odpowiedź Garmina (przycięta do ~30 kB) dla jednego źródła: "
-                + ", ".join(garmin_dane.ZRODLA_SUROWE) + ". Używaj, gdy zwięzłe narzędzia czegoś nie pokazują.",
+        "opis": "Diagnostyka: surowa odpowiedź Garmina (przycięta do ~30 kB). Źródła z id (activity_id/workout_id): "
+                + ", ".join(list(garmin_dane.ZRODLA_SUROWE) + ["szczegoly_strumienie"]) + "; źródła z zakresem dat "
+                "(od, do, do 366 dni): " + ", ".join(k for k in garmin_dane.ZRODLA_SUROWE_ZAKRES
+                                                     if k != "szczegoly_strumienie")
+                + ". Używaj, gdy zwięzłe narzędzia czegoś nie pokazują.",
         "schema": {"type": "object", "properties": {
-            "zrodlo": {"type": "string", "enum": list(garmin_dane.ZRODLA_SUROWE)},
-            "id": {"type": ["string", "integer"], "description": "activity_id albo workout_id"}},
-            "required": ["zrodlo", "id"]},
+            "zrodlo": {"type": "string", "enum": list(garmin_dane.ZRODLA_SUROWE) + list(garmin_dane.ZRODLA_SUROWE_ZAKRES)},
+            "id": {"type": ["string", "integer"], "description": "activity_id albo workout_id"},
+            "od": _DATA, "do": _DATA},
+            "required": ["zrodlo"]},
     },
 }
 

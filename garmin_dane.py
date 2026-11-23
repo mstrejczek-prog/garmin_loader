@@ -681,8 +681,31 @@ ZRODLA_SUROWE = {
 }
 
 
-def surowe(klient, zrodlo: str, ident) -> Any:
+# źródła z zakresem dat (od, do) - wywołanie: funkcja(klient, od, do)
+ZRODLA_SUROWE_ZAKRES = {
+    "szczegoly_strumienie": None,                       # obsługiwane osobno (activity_id + maxchart)
+    "sklad_ciala": lambda k, od, do: k.get_body_composition(od, do),
+    "vo2max": lambda k, od, do: k.get_max_metrics_range(od, do),
+    "gotowosc_zakres": lambda k, od, do: k.get_training_readiness_range(od, do),
+    "hrv_zakres": lambda k, od, do: k.get_hrv_data_range(od, do),
+    "tetno_spoczynkowe": lambda k, od, do: k.get_rhr_daily(od, do),
+    "ftp_rower": lambda k, od, do: k.get_functional_threshold_power_range(od, do, sport="CYCLING"),
+    "prog_mleczanowy": lambda k, od, do: k.get_lactate_threshold(latest=False, start_date=od, end_date=do),
+    "endurance_score": lambda k, od, do: k.get_endurance_score(od, do),
+    "hill_score": lambda k, od, do: k.get_hill_score(od, do),
+    "status_tygodniowy": lambda k, od, do: k.get_weekly_training_status(od, do),
+    "nawodnienie": lambda k, od, do: k.get_hydration_data(od),
+}
+
+
+def surowe(klient, zrodlo: str, ident=None, od=None, do=None) -> Any:
+    if zrodlo == "szczegoly_strumienie":
+        return przytnij(klient.get_activity_details(_id(ident, "activity_id"), maxchart=20, maxpoly=0), 30000)
+    if zrodlo in ZRODLA_SUROWE_ZAKRES:
+        poczatek, koniec = zakres(od, do, 7, 366)
+        return przytnij(ZRODLA_SUROWE_ZAKRES[zrodlo](klient, poczatek.isoformat(), koniec.isoformat()), 30000)
     if zrodlo not in ZRODLA_SUROWE:
-        raise BladDanych(f"Nieznane źródło „{zrodlo}”. Dostępne: {', '.join(ZRODLA_SUROWE)}")
+        raise BladDanych(f"Nieznane źródło „{zrodlo}”. Dostępne: "
+                         f"{', '.join(list(ZRODLA_SUROWE) + list(ZRODLA_SUROWE_ZAKRES))}")
     metoda, opis = ZRODLA_SUROWE[zrodlo]
     return przytnij(getattr(klient, metoda)(_id(ident, opis)), 30000)
