@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polityka prywatności – Garmin Plan Loader</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="karta">
+<h1>Polityka prywatności – Garmin Plan Loader</h1>
+<p>Garmin Plan Loader to prywatne narzędzie jednego użytkownika (właściciela serwera) do wgrywania planów
+treningowych do Garmin Connect i odczytu własnych danych treningowych. Nie jest związane z firmą Garmin ani Google.</p>
+
+<h2>Jakie dane są przetwarzane</h2>
+<ul>
+<li><b>Garmin Connect</b>: plany treningowe, kalendarz, aktywności, dane o śnie, HRV, tętnie i gotowości treningowej
+właściciela konta. Hasło służy tylko do zalogowania i nie jest zapisywane; token logowania jest przechowywany
+zaszyfrowany.</li>
+<li><b>Dysk Google</b> (opcjonalnie): aplikacja używa wyłącznie zakresu <code>drive.file</code> – może tworzyć
+i odczytywać tylko pliki i foldery, które sama utworzyła (pliki FIT z treningami w folderze
+„Dane treningowe/FIT (surowe pliki z Garmina)”). Nie ma dostępu do pozostałych plików na Dysku.
+Token Google jest przechowywany zaszyfrowany w konfiguracji serwera.</li>
+</ul>
+
+<h2>Komu dane są przekazywane</h2>
+<p>Nikomu. Dane trafiają wyłącznie między Garmin Connect, Dyskiem Google właściciela i asystentem AI (Claude),
+którego właściciel sam podłączył. Serwer nie ma bazy danych, analityki ani reklam i nie sprzedaje danych.</p>
+
+<h2>Przechowywanie i usuwanie</h2>
+<p>Serwer nie przechowuje danych treningowych – pobiera je na żądanie. Dostęp można cofnąć w każdej chwili:
+dla Google w <a href="https://myaccount.google.com/permissions">ustawieniach konta Google</a>, dla Garmina przez
+wylogowanie i usunięcie zmiennych <code>GARMIN_TOKEN</code> / <code>GOOGLE_TOKEN</code> z konfiguracji serwera.</p>
+
+<h2>Kontakt</h2>
+<p>Właściciel serwera – przez repozytorium
+<a href="https://github.com/mstrejczek-prog/garmin_loader">github.com/mstrejczek-prog/garmin_loader</a>.</p>
+<p><a href="/">Strona główna</a></p>
+</main>
+</body>
+</html>

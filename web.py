@@ -179,6 +179,11 @@ def manifest():
     return send_from_directory(KATALOG_STATIC, "manifest.webmanifest", mimetype="application/manifest+json")
 
 
+@app.get("/prywatnosc")
+def prywatnosc():
+    return send_from_directory(KATALOG_STATIC, "prywatnosc.html")
+
+
 @app.get("/zdrowie")
 def zdrowie():
     return {"ok": True}
