@@ -75,7 +75,7 @@ class TestWeb(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Garmin Plan Loader", r.data)
         self.assertIn("default-src 'self'", r.headers["Content-Security-Policy"])
-        self.assertIn("drive.file", self.c.get("/prywatnosc").get_data(as_text=True))
+        self.assertIn("nie usuwa", self.c.get("/prywatnosc").get_data(as_text=True))
         for plik in ("/static/app.js", "/static/style.css", "/manifest.webmanifest", "/static/ikona-192.png"):
             self.assertEqual(self.c.get(plik).status_code, 200, plik)
 
