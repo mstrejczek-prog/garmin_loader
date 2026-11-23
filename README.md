@@ -99,16 +99,57 @@ i desktop). Wtedy w zwykłej rozmowie Claude sam:
   spoczynkowe, Body Battery, stres, Training Readiness, Training Status (obciążenie, ACWR), VO2max,
 - **zagląda do kalendarza** i zdejmuje z niego treningi.
 
-| Narzędzie | Co robi |
-|---|---|
-| `format_planu` | format JSON planu + Twoje strefy |
-| `moje_ustawienia` | strefy tętna/mocy i FTP (zapisane tutaj i z profilu Garmin) |
-| `sprawdz_plan` | podgląd planu bez wysyłania |
-| `wyslij_plan` | wysyłka do Garmin Connect + kalendarz |
-| `kalendarz`, `usun_z_kalendarza` | zaplanowane treningi |
-| `aktywnosci`, `trening` | wykonane treningi i szczegóły jednego |
-| `wellness` | sen, HRV, tętno spoczynkowe, Body Battery, stres (do 14 dni) |
-| `gotowosc` | Training Readiness, Training Status, VO2max |
+| Narzędzie | Parametry | Co zwraca |
+|---|---|---|
+| `format_planu` | - | format JSON planu + Twoje strefy |
+| `moje_ustawienia` | `z_garmina` | strefy tętna/mocy i FTP (zapisane tutaj i z profilu Garmin) |
+| `sprawdz_plan` | `plan` | podgląd planu bez wysyłania |
+| `wyslij_plan` | `plan`, `nadpisz` | wysyłka do Garmin Connect + kalendarz |
+| `kalendarz` | `od`, `do` (do 3 mies.) | zaplanowane treningi: data, nazwa, `workout_id`, `wpis_id` |
+| `usun_z_kalendarza` | `wpis_id` | zdejmuje trening z kalendarza |
+| `plan_treningu` | `workout_id`, `surowe` | kroki zaplanowanego treningu: bloki powtórzeń, ćwiczenie, powtórzenia, `ciezar_kg`, `czas_s`/`dystans_m`, cel |
+| `aktywnosci` | `od`, `do` (do 92 dni), `sport` | wykonane treningi: czas, dystans, HR, moc, NP, TSS, TE, obciążenie |
+| `trening` | `activity_id`, `surowe` | szczegóły aktywności: podsumowanie, okrążenia, czas w strefach HR |
+| `serie` | `activity_id` | serie siłowe (ćwiczenie, powtórzenia, `ciezar_kg`, `czas_s`, `krok_planu`) + podsumowanie per ćwiczenie i tonaż |
+| `plan_vs_wykonanie` | `activity_id` | plan z kalendarza vs wykonanie: siła per krok (serie, powtórzenia, ciężar), wytrzymałość per okrążenie (czas, dystans, HR, moc, tempo vs cel), flaga `odchylenie` |
+| `pobierz_fit` | `activity_id` albo `od`, `do`, `sport` (do 20) | linki (ważne 1 h) do oryginalnych plików FIT |
+| `wellness` | `od`, `do` (do 14 dni) | sen, HRV, tętno spoczynkowe, Body Battery, stres |
+| `gotowosc` | `data` | Training Readiness, Training Status, ACWR, VO2max |
+| `surowe_dane` | `zrodlo`, `id` | diagnostyka: surowa odpowiedź Garmina (do ~30 kB) |
+
+Konwencje odpowiedzi: polskie klucze bez ogonków, daty RRRR-MM-DD, jednostki w nazwach pól
+(`ciezar_kg`, `czas_s`, `dystans_m`, `tempo_min_km`, `moc_w`); w nowych narzędziach brak danych = `null`.
+Każda odpowiedź jest przycinana do 60 000 znaków.
+
+Przykład `serie` (skrócony, Siłownia A z 22.11.2026):
+
+```json
+{"activity_id": 25162650914,
+ "podsumowanie": {"serie_aktywne": 31, "powtorzenia": 362, "tonaz_kg": 5534.0},
+ "cwiczenia": [{"cwiczenie": "PULL_UP / LAT_PULLDOWN", "serie": 4, "powtorzenia": 40,
+                "tonaz_kg": 1800.0, "ciezar_max_kg": 45.0, "ciezar_sr_kg": 45.0}, "..."],
+ "serie": [{"nr": 1, "typ": "aktywna", "cwiczenie": "PULL_UP / LAT_PULLDOWN", "powtorzenia": 10,
+            "ciezar_kg": 45.0, "czas_s": 76, "start_utc": "2026-11-22T11:31:11.0", "krok_planu": 0}, "..."]}
+```
+
+Przykład `plan_vs_wykonanie` (jeden wiersz):
+
+```json
+{"nr_kroku": 2, "cwiczenie_plan": "PULL_UP / LAT_PULLDOWN", "serie_plan": 4, "serie_wykonane": 4,
+ "powtorzenia_plan_seria": 10, "powtorzenia_wykonane": [10, 10, 10, 10],
+ "ciezar_plan_kg": 42.5, "ciezar_wykonany_kg": [45.0, 45.0, 45.0, 45.0], "odchylenie": ["ciężar"]}
+```
+
+Odchylenie: liczba serii różna od planu, powtórzenia albo czas różne o ≥10%, ciężar o ≥5%, dystans o ≥5%,
+średnie HR/moc poza celem podanym liczbami (cele strefowe nie są oceniane). Serie siłowe są łączone z
+krokami planu przez `wktStepIndex` (konektor sprawdza dwie konwencje numeracji i wybiera tę, w której
+zgadzają się kategorie ćwiczeń); w wytrzymałości kroki planu są łączone z okrążeniami po kolejności.
+Aktywność bez `associatedWorkoutId` dostaje komunikat zamiast błędu.
+
+**Pliki FIT**: serwer działa zdalnie (Render), więc nie zapisuje plików na Twój dysk i nie zasila
+`treningi.duckdb`. `pobierz_fit` zwraca podpisane linki (`/fit/<token>`, ważne godzinę) - otwierasz je w
+przeglądarce, zapisujesz zip (`<activity_id>_ACTIVITY.zip` z plikiem `<activity_id>_ACTIVITY.fit`) i
+uruchamiasz lokalnie `python ingest_fit.py treningi.duckdb <pliki>`.
 
 ### Jak podłączyć
 

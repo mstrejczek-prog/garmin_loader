@@ -25,7 +25,8 @@ Cały dostęp do Garmina idzie **jedną nieoficjalną biblioteką `garminconnect
 ## Narzędzia MCP
 
 `format_planu`, `moje_ustawienia`, `sprawdz_plan`, `wyslij_plan`, `kalendarz`, `usun_z_kalendarza`,
-`aktywnosci`, `trening`, `wellness`, `gotowosc`. Zasada: plan najpierw `sprawdz_plan` → podgląd →
+`plan_treningu`, `aktywnosci`, `trening`, `serie`, `plan_vs_wykonanie`, `pobierz_fit` (podpisane linki
+`/fit/<token>`, 1 h), `wellness`, `gotowosc`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
 akceptacja użytkownika → `wyslij_plan`. Błędy narzędzi zwracamy jako `isError` z polskim komunikatem.
 Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests/test_mcp.py`.
 
@@ -44,8 +45,12 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
   - `KOD_DOSTEPU` – opcjonalny kod do strony.
 - Connector w claude.ai: URL `.../mcp`, **Authentication: „No sign-in”** + nagłówek `Authorization`.
   claude.ai domyślnie proponuje OAuth („Sign in now”), bo `/mcp` bez tokenu zwraca 401 – trzeba to zmienić.
-- Kontener Claude Code nie ma dostępu sieciowego do `onrender.com`; weryfikacja przez logi Render API
-  albo przez sam connector, jeśli jest podpięty w sesji (narzędzia `mcp__Garmin__*`).
+- Środowisko Claude Code ma dopuszczony host `garmin-plan-loader.onrender.com` (od 2026-11-23): narzędzia
+  można wywołać wprost `POST /mcp` z nagłówkiem `Authorization: Bearer <MCP_TOKEN>` (token zna właściciel;
+  nie zapisywać go w repo). Lista narzędzi `mcp__Garmin__*` w sesji odświeża się dopiero po ponownym połączeniu.
+- Zweryfikowane endpointy (2026-11-23, żywe API): `/activity-service/activity/{id}/exerciseSets` (ciężar w gramach,
+  `startTime` w UTC, `wktStepIndex` w numeracji FIT - krok powtórzenia po dzieciach), `/workout-service/workout/{id}`
+  (`weightValue` w gramach), `/download-service/files/activity/{id}` (zip z `<id>_ACTIVITY.fit`).
 
 ## Znane ryzyka
 
@@ -60,6 +65,8 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 ## Plan prac
 
 - [x] Etap 1: connector MCP (plany + odczyt danych), wdrożony i sprawdzony na prawdziwym koncie (2026-11-22).
+- [x] Specyfikacja 2026-11-23, P1: `serie`, `plan_treningu`, `plan_vs_wykonanie`, `pobierz_fit` (wdrożone, testy akceptacyjne OK).
+- [ ] Specyfikacja 2026-11-23: `ingest_fit.py` (tabele `sets`, `lengths`, `workout_steps`, `--uzupelnij`), P2, P3.
 - [ ] Etap 2: `analiza_treningu` z pliku FIT (NP, TSS, IF, decoupling, krzywa mocy – kod w
       FIT_ANALYZER `ingest_fit.py`) i `obciazenie` (CTL/ATL/TSB).
 - [ ] Etap 3: README, archiwizacja repo FIT_ANALYZER (robi właściciel w ustawieniach GitHub).

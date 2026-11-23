@@ -402,7 +402,7 @@ def serie(klient, activity_id) -> dict:
             "powtorzenia": s.get("repetitionCount") if aktywna else None,
             "ciezar_kg": _kg(s.get("weight")) if aktywna else None,
             "czas_s": _r(s.get("duration"), 0),
-            "start": s.get("startTime"),
+            "start_utc": s.get("startTime"),
             "krok_planu": s.get("wktStepIndex"),
         }
         lista.append(wpis)
@@ -600,14 +600,15 @@ def plan_vs_wykonanie(klient, activity_id) -> dict:
             if not k["cwiczenie"] and not k["powtorzenia"]:
                 continue                                     # rozgrzewka/odpoczynek bez ćwiczenia
             sx = wykonane.get(k["nr_kroku"], [])
-            pow_ = [x["powtorzenia"] for x in sx if x["powtorzenia"] is not None]
+            pow_wszystkie = [x["powtorzenia"] for x in sx]
+            pow_ = [p for p in pow_wszystkie if p is not None]
             cie = [x["ciezar_kg"] for x in sx if x["ciezar_kg"]]
             plan_pow = (k["powtorzenia"] or 0) * k["_krotnosc"] if k["powtorzenia"] else None
             wiersz = {
                 "nr_kroku": k["nr_kroku"], "cwiczenie_plan": k["cwiczenie"],
                 "cwiczenie_wykonane": sx[0]["cwiczenie"] if sx else None,
                 "serie_plan": k["_krotnosc"], "serie_wykonane": len(sx),
-                "powtorzenia_plan_seria": k["powtorzenia"], "powtorzenia_wykonane": pow_ or None,
+                "powtorzenia_plan_seria": k["powtorzenia"], "powtorzenia_wykonane": pow_wszystkie or None,
                 "ciezar_plan_kg": k["ciezar_kg"], "ciezar_wykonany_kg": cie or None,
             }
             odch = []

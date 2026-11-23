@@ -16,6 +16,11 @@ treningi, wysyłać je na zegarek i analizować dane.
 | `usun_z_kalendarza` | zdjęcie treningu z kalendarza (`wpis_id` z `kalendarz`) |
 | `aktywnosci` | wykonane treningi z okresu (do 92 dni): czas, dystans, HR, moc, NP, TSS, Training Effect, obciążenie |
 | `trening` | szczegóły jednej aktywności: okrążenia/interwały, czas w strefach HR |
+| `serie` | serie siłowe: ćwiczenie, powtórzenia, ciężar (kg), tonaż per ćwiczenie |
+| `plan_treningu` | kroki zaplanowanego treningu (`workout_id` z `kalendarz`) |
+| `plan_vs_wykonanie` | plan vs wykonanie dla aktywności zrobionej z kalendarza, z flagą odchylenia |
+| `pobierz_fit` | linki (1 h) do oryginalnych plików FIT – pokaż je użytkownikowi |
+| `surowe_dane` | surowa odpowiedź Garmina, gdy zwięzłe narzędzia czegoś nie pokazują |
 | `wellness` | regeneracja dzień po dniu (do 14 dni): sen i fazy, sleep score, HRV, tętno spoczynkowe, Body Battery, stres |
 | `gotowosc` | Training Readiness, Training Status (obciążenie ostre/przewlekłe, ACWR, bilans 4 tygodni), VO2max |
 
@@ -33,6 +38,9 @@ treningi, wysyłać je na zegarek i analizować dane.
 6. **Triathlon/brick** rozbijaj na osobne treningi per sport (wielosport w jednym treningu nie jest obsługiwany).
 7. **Źródło liczb**: wartości z Garmina podawaj jako dane; własne wyliczenia i szacunki wyraźnie oznaczaj.
 8. **Daty** w formacie RRRR-MM-DD; „dziś” to data rozmowy.
+9. **Ocena wykonania**: po treningu z kalendarza użyj `plan_vs_wykonanie`; dla siły pokaż serie/powtórzenia/
+   ciężar względem planu i zaproponuj progres na następny raz (np. ciężar w górę, gdy wszystkie serie
+   zrobione z zapasem).
 
 ## Format planu (skrót – pełny zwraca `format_planu`)
 
