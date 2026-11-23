@@ -46,3 +46,33 @@ Wybrano opcję A (`plan_treningu` jako osobne narzędzie) – pasuje do istniej�
   działa przez `wktStepIndex`, nie przez nazwę.
 - Do zrobienia: zmiany w `ingest_fit.py` (tabele `sets`, `lengths`, `workout_steps`, `--uzupelnij`),
   Priorytet 2 i 3.
+
+
+### 2026-11-23 – Dysk Google i Priorytet 2 (wdrożone)
+
+**Dysk Google**: konektor widzi folder „Obsidian Vault/Dane treningowe/FIT (surowe pliki z Garmina)” (zakres
+`drive`, folder po ID). Nowe narzędzie `stan_dysku`: duplikaty po numerze aktywności (także kopie „123 (2).zip”),
+braki względem Garmina, `uzupelnij`. Stan po porządkach: 358 plików = 358 aktywności, 0 duplikatów, brak luk
+od maja 2025 (dogrywanie 27 plików, 15 kopii w koszu, błędny folder w koszu).
+
+**Priorytet 2**
+
+| Narzędzie | Test na żywym API | Wynik |
+|---|---|---|
+| `trening` (bieg) | 24559234030 | RPE 8, samopoczucie „słabo”, zgodność z planem 53%, GCT 253 ms, oscylacja 7,8 cm, krok 1,14 m, strefy mocy 5, pogoda 16,1 °C / 16 km/h NE, buty Boston 12 |
+| `trening` (basen) | 25124549994 | 18 długości, SWOLF 84, styl per okrążenie, przerwy jako „przerwa”, tempo 4:50 (z danymi zegarka) i mediana 2:47/100 m |
+| `strumienie` | 24559234030, krok 60 s | 103 punkty, HR/moc/kadencja/prędkość/GCT |
+| `historia_metryk` | 2025-11-23..2026-11-22 | 53 tygodnie; VO2max bieg 37 tyg., rower 25, FTP 6 pomiarów, próg 26 (tempo 4:05–4:15) |
+| `sklad_ciala` | rok | 2 ręczne pomiary masy (brak wagi z analizą składu) |
+| `wellness` | 30 dni, pola sen+hrv | 30 dni w ~12 s |
+
+**Zweryfikowane / poprawione względem notatki**
+- Pogoda w °F i mph (przeliczane), RPE 10–100, samopoczucie 0–100.
+- Prędkość progu mleczanowego w (m/s)/10.
+- `trainingstatus/weekly` zwraca dane dzienne; gotowość ma kilka wpisów dziennie (brany poranny).
+- Lista aktywności nie zawiera RPE – jest tylko w `trening` (pola w `aktywnosci` będą null).
+- Zegarek zapisuje odpoczynek przy ścianie bez przycisku jako długość (np. 25 m w 217 s) – stąd mediana tempa.
+
+**Otwarte**
+- P3: `sprzet`, `rekordy`, `prognozy`.
+- `strumienie`: Garmin próbkuje nierówno (gęściej na początku) – `krok_s` jest przybliżony.

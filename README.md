@@ -109,15 +109,18 @@ i desktop). Wtedy w zwykłej rozmowie Claude sam:
 | `usun_z_kalendarza` | `wpis_id` | zdejmuje trening z kalendarza |
 | `plan_treningu` | `workout_id`, `surowe` | kroki zaplanowanego treningu: bloki powtórzeń, ćwiczenie, powtórzenia, `ciezar_kg`, `czas_s`/`dystans_m`, cel |
 | `aktywnosci` | `od`, `do` (do 92 dni), `sport` | wykonane treningi: czas, dystans, HR, moc, NP, TSS, TE, obciążenie |
-| `trening` | `activity_id`, `surowe` | szczegóły aktywności: podsumowanie, okrążenia, czas w strefach HR |
+| `trening` | `activity_id`, `dlugosci`, `surowe` | szczegóły aktywności: podsumowanie, RPE i samopoczucie, zgodność z planem, okrążenia (moc śr/max/NP, tempo, kadencja; w pływaniu styl, długości, SWOLF, tempo /100 m), strefy HR i mocy, pływanie (z medianą tempa), dynamika biegu, pogoda (°C, km/h), sprzęt |
+| `strumienie` | `activity_id`, `metryki`, `krok_s` | przebieg w czasie (HR, moc, kadencja, prędkość, wysokość, temperatura, dynamika biegu…), tabela kolumny + wiersze, do 1500 punktów |
 | `serie` | `activity_id` | serie siłowe (ćwiczenie, powtórzenia, `ciezar_kg`, `czas_s`, `krok_planu`) + podsumowanie per ćwiczenie i tonaż |
 | `plan_vs_wykonanie` | `activity_id` | plan z kalendarza vs wykonanie: siła per krok (serie, powtórzenia, ciężar), wytrzymałość per okrążenie (czas, dystans, HR, moc, tempo vs cel), flaga `odchylenie` |
 | `pobierz_fit` | `activity_id` albo `od`, `do`, `sport` (do 20), `cel` (`dysk`/`link`) | oryginalne pliki FIT: na Dysk Google (gdy połączony) albo linki ważne 1 h |
 | `polacz_dysk_google` | - | link do jednorazowego połączenia Dysku Google i stan połączenia |
 | `stan_dysku` | `od`, `do` (do 92 dni), `sport`, `uzupelnij` | pliki FIT na Dysku: duplikaty, pliki bez numeru, brakujące aktywności, dogranie braków |
-| `wellness` | `od`, `do` (do 14 dni) | sen, HRV, tętno spoczynkowe, Body Battery, stres |
+| `wellness` | `od`, `do` (do 92 dni), `pola` | sen, HRV, tętno spoczynkowe, Body Battery, stres; przy wolnym Garminie część dni + `kontynuuj_od` |
+| `sklad_ciala` | `od`, `do` (do 1 roku), `nawodnienie` | masa, tkanka tłuszczowa, masa mięśniowa i kostna, woda, BMI, źródło; opcjonalnie wypita woda (do 31 dni) |
+| `historia_metryk` | `od`, `do` (do 1 roku), `agregacja` (`dzien`/`tydzien`) | tabela trendu: VO2max bieg/rower, Training Status, obciążenie ostre/przewlekłe, ACWR, poranna gotowość, HRV, tętno spoczynkowe, Endurance/Hill Score, FTP, próg mleczanowy (HR, tempo, moc) |
 | `gotowosc` | `data` | Training Readiness, Training Status, ACWR, VO2max |
-| `surowe_dane` | `zrodlo`, `id` | diagnostyka: surowa odpowiedź Garmina (do ~30 kB) |
+| `surowe_dane` | `zrodlo`, `id` albo `od`/`do` | diagnostyka: surowa odpowiedź Garmina (do ~30 kB) |
 
 Konwencje odpowiedzi: polskie klucze bez ogonków, daty RRRR-MM-DD, jednostki w nazwach pól
 (`ciezar_kg`, `czas_s`, `dystans_m`, `tempo_min_km`, `moc_w`); w nowych narzędziach brak danych = `null`.
@@ -141,6 +144,11 @@ Przykład `plan_vs_wykonanie` (jeden wiersz):
  "powtorzenia_plan_seria": 10, "powtorzenia_wykonane": [10, 10, 10, 10],
  "ciezar_plan_kg": 42.5, "ciezar_wykonany_kg": [45.0, 45.0, 45.0, 45.0], "odchylenie": ["ciężar"]}
 ```
+
+Jednostki przeliczane przez konektor: pogoda z °F/mph na °C/km/h, ciężar z gramów na kg, RPE z 10–100 na 1–10,
+samopoczucie z 0–100 na słowa, tempo progu mleczanowego z (m/s)/10 na min/km. Tempo pływania `tempo_100m`
+liczone jest z samych długości basenu, a `tempo_100m_mediana` jest odporne na odpoczynek przy ścianie
+zapisany jako długość. `aktywnosci` nie zawiera RPE (lista Garmina go nie zwraca) - jest w `trening`.
 
 Odchylenie: liczba serii różna od planu, powtórzenia albo czas różne o ≥10%, ciężar o ≥5%, dystans o ≥5%,
 średnie HR/moc poza celem podanym liczbami (cele strefowe nie są oceniane). Serie siłowe są łączone z

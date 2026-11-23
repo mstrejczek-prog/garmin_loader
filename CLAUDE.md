@@ -29,7 +29,8 @@ Cały dostęp do Garmina idzie **jedną nieoficjalną biblioteką `garminconnect
 `plan_treningu`, `aktywnosci`, `trening`, `serie`, `plan_vs_wykonanie`, `pobierz_fit` (Dysk Google albo
 podpisane linki `/fit/<token>`, 1 h), `polacz_dysk_google` (link → `/google/polacz/<token>` → Google →
 `/google/powrot` pokazuje zaszyfrowany `GOOGLE_TOKEN` do wpisania w Render), `stan_dysku` (duplikaty, braki
-vs Garmin, `uzupelnij`), `wellness`, `gotowosc`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
+vs Garmin, `uzupelnij`), `wellness` (do 92 dni, `pola`), `gotowosc`, `strumienie`, `sklad_ciala`,
+`historia_metryk`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
 akceptacja użytkownika → `wyslij_plan`. Błędy narzędzi zwracamy jako `isError` z polskim komunikatem.
 Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests/test_mcp.py`.
 
@@ -57,6 +58,10 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 - Zweryfikowane endpointy (2026-11-23, żywe API): `/activity-service/activity/{id}/exerciseSets` (ciężar w gramach,
   `startTime` w UTC, `wktStepIndex` w numeracji FIT - krok powtórzenia po dzieciach), `/workout-service/workout/{id}`
   (`weightValue` w gramach), `/download-service/files/activity/{id}` (zip z `<id>_ACTIVITY.fit`).
+  P2: pogoda `/weather` w °F i mph; RPE `directWorkoutRpe` 10–100, `directWorkoutFeel` 0–100 (tylko w szczegółach
+  aktywności, nie w liście); prędkość progu mleczanowego w (m/s)/10; `get_weekly_training_status` zwraca wpisy
+  dzienne; `get_training_readiness_range` ma kilka wpisów na dzień (brany `AFTER_WAKEUP_RESET`); VO2max „generic”
+  bywa kopią rowerowego (sport CYCLING) - pomijany dla biegu.
 
 ## Znane ryzyka
 
@@ -75,7 +80,9 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 - [x] `ingest_fit.py` (repo FIT_ANALYZER, prywatne): tabele `sets`, `lengths`, `workout_steps`, `--uzupelnij`,
       `progi_zmierzone` + widok `sessions_progi` (2026-11-23).
 - [x] Dysk Google dla `pobierz_fit`: połączony i sprawdzony 2026-11-23 (aplikacja OAuth opublikowana, „In production”).
-- [ ] Specyfikacja 2026-11-23: P2, P3.
+- [x] Specyfikacja 2026-11-23, P2 (2026-11-23): rozszerzony `trening`, `strumienie`, `sklad_ciala`, `historia_metryk`,
+      `wellness` do 92 dni. Zweryfikowane na żywym API (bieg 24559234030, basen 25124549994, rok historii).
+- [ ] Specyfikacja 2026-11-23: P3 (`sprzet`, `rekordy`, `prognozy`).
 - [ ] Etap 2: `analiza_treningu` z pliku FIT (NP, TSS, IF, decoupling, krzywa mocy – kod w
       FIT_ANALYZER `ingest_fit.py`) i `obciazenie` (CTL/ATL/TSB).
 - [ ] Etap 3: README, archiwizacja repo FIT_ANALYZER (robi właściciel w ustawieniach GitHub).
