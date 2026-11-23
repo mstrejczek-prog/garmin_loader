@@ -113,7 +113,8 @@ class TestMcp(BazaMcp):
         nazwy = {t["name"] for t in self.rpc("tools/list").get_json()["result"]["tools"]}
         self.assertTrue({"format_planu", "sprawdz_plan", "wyslij_plan", "kalendarz", "aktywnosci",
                          "trening", "wellness", "gotowosc", "usun_z_kalendarza", "moje_ustawienia",
-                         "serie", "plan_treningu", "plan_vs_wykonanie", "pobierz_fit", "surowe_dane"} <= nazwy)
+                         "serie", "plan_treningu", "plan_vs_wykonanie", "pobierz_fit", "surowe_dane",
+                         "strumienie", "sklad_ciala", "historia_metryk"} <= nazwy)
         self.assertEqual(self.c.get("/mcp", headers={"Authorization": "Bearer tajne"}).status_code, 405)
         self.assertEqual(self.rpc("nie/ma").get_json()["error"]["code"], -32601)
 
@@ -169,7 +170,7 @@ class TestMcp(BazaMcp):
         self.assertEqual(t["strefy_hr"][0]["min"], 30.0)
 
     def test_zakresy_dat(self):
-        w, tekst = self.narzedzie("wellness", od="2026-01-01", do="2026-03-01")
+        w, tekst = self.narzedzie("wellness", od="2026-01-01", do="2026-06-01")
         self.assertTrue(w["isError"])
         w, tekst = self.narzedzie("aktywnosci", od="zla")
         self.assertIn("RRRR-MM-DD", tekst)
@@ -345,6 +346,159 @@ class TestPlanVsWykonanieBieg(unittest.TestCase):
         self.assertIsNone(d["kroki"][1]["odchylenie"])
         self.assertEqual(d["kroki"][1]["tempo_min_km"], "4:00")
         self.assertEqual(d["kroki"][3]["odchylenie"], ["poza celem"])
+
+
+class AtrapaP2(AtrapaDane):
+    """Odpowiedzi w kształcie żywego API (wartości wymyślone)."""
+
+    def get_activity(self, aid):
+        if str(aid) == "2":
+            return {"activityId": 2, "activityTypeDTO": {"typeKey": "lap_swimming"}, "summaryDTO": {
+                "duration": 1800, "distance": 450, "averageSpeed": 0.5, "poolLength": 25.0, "numberOfActiveLengths": 18,
+                "averageSWOLF": 84.0, "averageStrokes": 12.1, "totalNumberOfStrokes": 217, "averageSwimCadence": 9.0,
+                "directWorkoutRpe": 50, "directWorkoutFeel": 50}}
+        return {"activityId": 1, "activityTypeDTO": {"typeKey": "running"}, "summaryDTO": {
+            "duration": 3600, "elapsedDuration": 3600, "distance": 12000, "averageSpeed": 3.333, "averageMovingSpeed": 3.333,
+            "avgGradeAdjustedSpeed": 3.4, "averagePower": 344.0, "averageRunCadence": 180.0, "groundContactTime": 252.7,
+            "groundContactBalanceLeft": 50.58, "verticalOscillation": 7.82, "verticalRatio": 6.81, "strideLength": 113.76,
+            "directWorkoutRpe": 80, "directWorkoutFeel": 25, "directWorkoutComplianceScore": 53}}
+
+    def get_activity_splits(self, aid):
+        if str(aid) == "2":
+            return {"lapDTOs": [{"lapIndex": 1, "duration": 300, "distance": 100, "averageSpeed": 0.4,
+                                 "averageMovingSpeed": 0.5, "swimStroke": "FREESTYLE", "numberOfActiveLengths": 4,
+                                 "averageSWOLF": 60, "averageStrokes": 10,
+                                 "lengthDTOs": [{"lengthIndex": 1, "swimStroke": "FREESTYLE", "duration": 49.6,
+                                                 "averageSpeed": 0.504, "totalNumberOfStrokes": 10, "averageSWOLF": 60}]}]}
+        return {"lapDTOs": [{"lapIndex": 1, "duration": 300, "distance": 1000, "averageSpeed": 3.333, "averagePower": 340,
+                             "maxPower": 420}]}
+
+    def get_activity_power_in_timezones(self, aid):
+        return [{"zoneNumber": 1, "secsInZone": 600.0, "zoneLowBoundary": 256}]
+
+    def get_activity_weather(self, aid):
+        return {"temp": 61, "apparentTemp": 59, "relativeHumidity": 65, "windSpeed": 10,
+                "windDirectionCompassPoint": "ne", "weatherTypeDTO": {"desc": "Partly Cloudy"}}
+
+    def get_activity_gear(self, aid):
+        return [{"displayName": "Buty", "customMakeModel": "Model X", "gearTypeName": "Shoes",
+                 "gearStatusName": "active", "maximumMeters": 644000.0}]
+
+    def get_activity_details(self, aid, maxchart=2000, maxpoly=0):
+        self.wywolania.append(("details", maxchart))
+        return {"metricDescriptors": [{"metricsIndex": 0, "key": "sumElapsedDuration"},
+                                      {"metricsIndex": 1, "key": "directHeartRate"},
+                                      {"metricsIndex": 2, "key": "directSpeed"}],
+                "activityDetailMetrics": [{"metrics": [0.0, 120.0, 3.0]}, {"metrics": [10.0, 130.0, None]}]}
+
+    def get_body_composition(self, od, do):
+        return {"dateWeightList": [{"calendarDate": "2026-11-01", "weight": 75300.0, "bodyFat": 14.2,
+                                    "muscleMass": 35100.0, "bmi": 23.1, "sourceType": "INDEX_SCALE"}],
+                "totalAverage": {"weight": 75300.0, "bodyFat": 14.2}}
+
+    def get_max_metrics_range(self, o, k):
+        return [{"generic": {"calendarDate": "2026-11-02", "vo2MaxPreciseValue": 52.1, "sport": "RUNNING"},
+                 "cycling": {"calendarDate": "2026-11-02", "vo2MaxPreciseValue": 52.8, "sport": "CYCLING"}}]
+
+    def get_weekly_training_status(self, o, k):
+        return {"reportData": {"1": [{"calendarDate": "2026-11-02", "trainingStatusFeedbackPhrase": "RECOVERY_1",
+                                      "primaryTrainingDevice": True, "acuteTrainingLoadDTO": {
+                                          "dailyTrainingLoadAcute": 92, "dailyTrainingLoadChronic": 223,
+                                          "dailyAcuteChronicWorkloadRatio": 0.41}}]}}
+
+    def get_training_readiness_range(self, o, k):
+        return [{"calendarDate": "2026-11-02", "score": 40, "level": "LOW", "inputContext": "UPDATE_REALTIME_VARIABLES",
+                 "timestamp": "2026-11-02T18:00"},
+                {"calendarDate": "2026-11-02", "score": 69, "level": "MODERATE", "inputContext": "AFTER_WAKEUP_RESET",
+                 "timestamp": "2026-11-02T07:00"}]
+
+    def get_hrv_data_range(self, o, k):
+        return {"hrvSummaries": [{"calendarDate": "2026-11-02", "lastNightAvg": 40, "weeklyAvg": 42,
+                                  "status": "UNBALANCED", "baseline": {"balancedLow": 47, "balancedUpper": 74}}]}
+
+    def get_rhr_daily(self, o, k):
+        return [{"calendarDate": "2026-11-02", "value": 53.0}, {"calendarDate": "2026-11-03", "value": 55.0}]
+
+    def get_endurance_score(self, o, k, aggregation="weekly"):
+        return {"groupMap": {"2026-11-02": {"groupAverage": 7370}}}
+
+    def get_hill_score(self, o, k):
+        return {"hillScoreDTOList": [{"calendarDate": "2026-11-02", "overallScore": 37, "primaryTrainingDevice": True}]}
+
+    def get_functional_threshold_power_range(self, o, k, sport="RUNNING"):
+        return []
+
+    def get_lactate_threshold(self, latest=True, start_date=None, end_date=None):
+        raise RuntimeError("niedostępne")
+
+
+class TestMcpP2(BazaMcp):
+    def setUp(self):
+        super().setUp()
+        garmin_io._nowy_klient = AtrapaP2
+
+    def test_trening_bieg(self):
+        _, tekst = self.narzedzie("trening", activity_id=1)
+        d = json.loads(tekst)
+        self.assertEqual((d["rpe"], d["samopoczucie"], d["zgodnosc_z_planem_proc"]), (8.0, "słabo", 53))
+        self.assertEqual(d["dynamika_biegu"]["dlugosc_kroku_m"], 1.14)
+        self.assertEqual(d["podsumowanie"]["tempo_min_km"], "5:00")
+        self.assertIsNone(d["plywanie"])
+        self.assertEqual(d["strefy_mocy"][0], {"strefa": 1, "od_w": 256, "min": 10.0})
+        self.assertEqual((d["pogoda"]["temp_c"], d["pogoda"]["wiatr_kmh"], d["pogoda"]["wiatr_kierunek"]), (16.1, 16, "NE"))
+        self.assertEqual(d["sprzet"][0]["limit_km"], 644)
+        self.assertEqual(d["okrazenia"][0]["moc_max_w"], 420)
+
+    def test_trening_plywanie(self):
+        _, tekst = self.narzedzie("trening", activity_id=2, dlugosci=True)
+        d = json.loads(tekst)
+        self.assertIsNone(d["dynamika_biegu"])
+        self.assertEqual((d["plywanie"]["basen_m"], d["plywanie"]["swolf_sr"], d["plywanie"]["tempo_100m"]), (25, 84, "3:20"))
+        o = d["okrazenia"][0]
+        self.assertEqual((o["styl"], o["dlugosci"], o["tempo_100m"], o["swolf"]), ("freestyle", 4, "3:20", 60))
+        self.assertEqual(d["dlugosci"][0]["tempo_100m"], "3:18")
+
+    def test_strumienie(self):
+        _, tekst = self.narzedzie("strumienie", activity_id=1, metryki=["hr", "predkosc_kmh", "moc_w"], krok_s=10)
+        d = json.loads(tekst)
+        self.assertEqual(d["kolumny"], ["czas_s", "hr", "predkosc_kmh"])
+        self.assertEqual(d["wiersze"], [[0, 120, 10.8], [10, 130, None]])
+        self.assertEqual(d["brak_metryk"], ["moc_w"])
+        self.assertIn(("details", 360), mcp_serwer._klient.wywolania)
+        w, _ = self.narzedzie("strumienie", activity_id=1, metryki=["xyz"])
+        self.assertTrue(w["isError"])
+
+    def test_sklad_ciala(self):
+        _, tekst = self.narzedzie("sklad_ciala", od="2026-10-01", do="2026-11-22")
+        d = json.loads(tekst)
+        self.assertEqual(d["pomiary"][0]["masa_kg"], 75.3)
+        self.assertEqual(d["pomiary"][0]["masa_miesniowa_kg"], 35.1)
+        w, _ = self.narzedzie("sklad_ciala", od="2026-01-01", do="2026-11-22", nawodnienie=True)
+        self.assertTrue(w["isError"])
+
+    def test_historia_metryk(self):
+        _, tekst = self.narzedzie("historia_metryk", od="2026-11-01", do="2026-11-22", agregacja="dzien")
+        d = json.loads(tekst)
+        wiersz = dict(zip(d["kolumny"], d["wiersze"][0]))
+        self.assertEqual(wiersz["data"], "2026-11-02")
+        self.assertEqual((wiersz["vo2max_bieg"], wiersz["vo2max_rower"], wiersz["gotowosc"], wiersz["acwr"]),
+                         (52.1, 52.8, 69, 0.41))
+        self.assertEqual((wiersz["hrv_noc"], wiersz["hr_spoczynkowe"], wiersz["endurance_score"]), (40, 53, 7370))
+        self.assertIn("ftp_rower_w", d["puste_zrodla"])
+        self.assertIn("prog_mleczanowy", d["bledy"])
+        _, tekst = self.narzedzie("historia_metryk", od="2026-01-01", do="2026-11-22")
+        d = json.loads(tekst)
+        self.assertEqual(d["agregacja"], "tydzien")
+        tydzien = dict(zip(d["kolumny"], d["wiersze"][0]))
+        self.assertEqual((tydzien["data"], tydzien["hr_spoczynkowe"]), ("2026-11-02", 54.0))
+
+    def test_wellness_pola(self):
+        _, tekst = self.narzedzie("wellness", od="2026-11-01", do="2026-11-01", pola=["sen"])
+        d = json.loads(tekst)[0]
+        self.assertEqual(d["sen_h"], 7.5)
+        self.assertNotIn("hr_spoczynkowe", d)
+        w, _ = self.narzedzie("wellness", pola=["xyz"])
+        self.assertTrue(w["isError"])
 
 
 if __name__ == "__main__":

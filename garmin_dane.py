@@ -13,7 +13,9 @@ import json
 from typing import Any
 
 MAX_DNI_AKTYWNOSCI = 92
-MAX_DNI_WELLNESS = 14
+MAX_DNI_WELLNESS = 92
+POLA_WELLNESS_DOMYSLNE = ("podsumowanie", "sen", "hrv")
+CZAS_WELLNESS_S = 75             # bezpiecznik: serwer ma 120 s na odpowiedź
 MAX_SUROWE_ZNAKI = 20000
 
 
@@ -110,6 +112,8 @@ def _aktywnosc(a: dict) -> dict:
         "te_tlenowy": _r(a.get("aerobicTrainingEffect"), 1),
         "te_beztlenowy": _r(a.get("anaerobicTrainingEffect"), 1),
         "obciazenie": _r(a.get("activityTrainingLoad"), 0),
+        "rpe": _rpe(a.get("directWorkoutRpe")),
+        "samopoczucie": _samopoczucie(a.get("directWorkoutFeel")),
         "kcal": _r(a.get("calories"), 0),
         "tempo_basen_100m_s": _r(100 / a["averageSpeed"], 0) if a.get("averageSpeed") and g(a, "activityType.typeKey", "").endswith("swimming") else None,
     })
@@ -121,33 +125,82 @@ def aktywnosci(klient, od=None, do=None, sport: str | None = None) -> list[dict]
     return [_aktywnosc(a) for a in lista]
 
 
-def _okrazenie(l: dict) -> dict:
-    return _bez_none({
+SAMOPOCZUCIE = {0: "bardzo słabo", 25: "słabo", 50: "normalnie", 75: "dobrze", 100: "bardzo dobrze"}
+
+
+def _rpe(v):
+    """Garmin trzyma RPE jako 10-100 (RPE 8 = 80)."""
+    return _r(v / 10, 1) if isinstance(v, (int, float)) and v > 0 else None
+
+
+def _samopoczucie(v):
+    if not isinstance(v, (int, float)):
+        return None
+    return SAMOPOCZUCIE.get(int(round(v / 25.0)) * 25)
+
+
+def _tempo_km(mps):
+    return _mps_na_tempo(mps, 1000.0) if isinstance(mps, (int, float)) and mps > 0 else None
+
+
+def _tempo_100m(mps):
+    return _mps_na_tempo(mps, 100.0) if isinstance(mps, (int, float)) and mps > 0 else None
+
+
+def _okrazenie(l: dict, sport: str = "") -> dict:
+    plyw = "swim" in sport
+    bieg = "run" in sport or sport in ("trail_running", "treadmill_running")
+    w = {
         "nr": l.get("lapIndex"),
         "czas_min": _min(l.get("duration")),
-        "dystans_km": _r((l.get("distance") or 0) / 1000, 2) if l.get("distance") else None,
+        "dystans_km": _r((l.get("distance") or 0) / 1000, 3 if plyw else 2) if l.get("distance") else None,
         "hr_sr": _r(l.get("averageHR"), 0),
         "hr_max": _r(l.get("maxHR"), 0),
         "moc_sr_w": _r(l.get("averagePower"), 0),
+        "moc_max_w": _r(l.get("maxPower"), 0),
         "moc_np_w": _r(l.get("normalizedPower"), 0),
         "predkosc_sr_kmh": _r(l["averageSpeed"] * 3.6, 1) if l.get("averageSpeed") else None,
-        "kadencja_sr": _r(l.get("averageRunCadence") or l.get("averageBikeCadence"), 0),
+        "tempo_min_km": _tempo_km(l.get("averageSpeed")) if bieg else None,
+        "kadencja_sr": _r(l.get("averageRunCadence") or l.get("averageBikeCadence") or l.get("averageSwimCadence"), 0),
         "przewyzszenie_m": _r(l.get("elevationGain"), 0),
         "typ": l.get("intensityType"),
-    })
+    }
+    if plyw:
+        w.update({
+            "styl": (l.get("swimStroke") or "").lower() or None,
+            "dlugosci": l.get("numberOfActiveLengths"),
+            "tempo_100m": _tempo_100m(l.get("averageMovingSpeed") or l.get("averageSpeed")),
+            "swolf": _r(l.get("averageSWOLF"), 0),
+            "ruchy_na_dlugosc": _r(l.get("averageStrokes"), 1),
+        })
+    return _bez_none(w)
 
 
-def trening(klient, activity_id) -> dict:
-    """Szczegóły jednej aktywności: podsumowanie, okrążenia, czas w strefach tętna."""
+def _dlugosc(x: dict) -> dict:
+    return {"nr": x.get("lengthIndex"), "styl": (x.get("swimStroke") or "").lower() or None,
+            "czas_s": _r(x.get("duration"), 1), "tempo_100m": _tempo_100m(x.get("averageSpeed")),
+            "ruchy": x.get("totalNumberOfStrokes"), "swolf": _r(x.get("averageSWOLF"), 0),
+            "hr_sr": _r(x.get("averageHR"), 0)}
+
+
+def _f_na_c(f):
+    return _r((f - 32) * 5 / 9, 1) if isinstance(f, (int, float)) else None
+
+
+def trening(klient, activity_id, dlugosci: bool = False) -> dict:
+    """Szczegóły jednej aktywności: podsumowanie, RPE, okrążenia, strefy HR i mocy, pływanie, dynamika biegu,
+    pogoda, sprzęt. Sekcje, które nie dotyczą sportu, mają wartość null."""
     aid = str(activity_id).strip()
     if not aid.isdigit():
         raise BladDanych("activity_id musi być liczbą (z narzędzia aktywnosci)")
     a = klient.get_activity(aid) or {}
     s = a.get("summaryDTO") or {}
-    wynik = _bez_none({
+    sport = g(a, "activityTypeDTO.typeKey") or ""
+    plyw, bieg = "swim" in sport, "run" in sport
+    wynik = {
         "id": a.get("activityId"),
         "nazwa": a.get("activityName"),
-        "sport": g(a, "activityTypeDTO.typeKey"),
+        "sport": sport or None,
         "start": s.get("startTimeLocal"),
         "opis": a.get("description"),
         "podsumowanie": _bez_none({
@@ -162,28 +215,311 @@ def trening(klient, activity_id) -> dict:
             "moc_max_w": _r(s.get("maxPower"), 0),
             "tss": _r(s.get("trainingStressScore"), 0),
             "if": _r(s.get("intensityFactor"), 2),
-            "praca_kj": _r(s.get("totalWork"), 0),
+            "praca_kj": _r((s["totalWork"] / 1000) if s.get("totalWork") and s["totalWork"] > 10000 else s.get("totalWork"), 0),
             "predkosc_sr_kmh": _r(s["averageSpeed"] * 3.6, 1) if s.get("averageSpeed") else None,
+            "tempo_min_km": _tempo_km(s.get("averageMovingSpeed") or s.get("averageSpeed")) if bieg else None,
+            "tempo_gap_min_km": _tempo_km(s.get("avgGradeAdjustedSpeed")) if bieg else None,
             "kadencja_sr": _r(s.get("averageRunCadence") or s.get("averageBikeCadence"), 0),
+            "oddech_sr": _r(s.get("avgRespirationRate"), 0),
             "te_tlenowy": _r(s.get("trainingEffect"), 1),
             "te_beztlenowy": _r(s.get("anaerobicTrainingEffect"), 1),
+            "te_opis": s.get("trainingEffectLabel"),
             "obciazenie": _r(s.get("activityTrainingLoad"), 0),
             "temp_sr_c": _r(s.get("averageTemperature"), 0),
             "kcal": _r(s.get("calories"), 0),
+            "body_battery_zmiana": s.get("differenceBodyBattery"),
         }),
-    })
+        "rpe": _rpe(s.get("directWorkoutRpe")),
+        "samopoczucie": _samopoczucie(s.get("directWorkoutFeel")),
+        "zgodnosc_z_planem_proc": s.get("directWorkoutComplianceScore"),
+        "plywanie": _bez_none({
+            "basen_m": _r(s.get("poolLength"), 0),
+            "dlugosci_aktywne": s.get("numberOfActiveLengths"),
+            "tempo_100m": _tempo_100m(s.get("averageSpeed")),
+            "swolf_sr": _r(s.get("averageSWOLF"), 0),
+            "ruchy_na_dlugosc_sr": _r(s.get("averageStrokes"), 1),
+            "ruchy_razem": s.get("totalNumberOfStrokes"),
+            "kadencja_sr": _r(s.get("averageSwimCadence"), 0),
+        }) if plyw else None,
+        "dynamika_biegu": _bez_none({
+            "kontakt_z_podlozem_ms": _r(s.get("groundContactTime"), 0),
+            "balans_lewa_proc": _r(s.get("groundContactBalanceLeft"), 1),
+            "oscylacja_pionowa_cm": _r(s.get("verticalOscillation"), 1),
+            "ratio_pionowe_proc": _r(s.get("verticalRatio"), 1),
+            "dlugosc_kroku_m": _r(s["strideLength"] / 100, 2) if s.get("strideLength") else None,
+            "moc_biegowa_sr_w": _r(s.get("averagePower"), 0),
+            "kadencja_sr": _r(s.get("averageRunCadence"), 0),
+        }) or None if bieg else None,
+        "okrazenia": None, "strefy_hr": None, "strefy_mocy": None, "pogoda": None, "sprzet": None,
+    }
+    bledy = {}
     try:
         laps = (klient.get_activity_splits(aid) or {}).get("lapDTOs") or []
-        wynik["okrazenia"] = [_okrazenie(l) for l in laps[:60]]
+        wynik["okrazenia"] = [_okrazenie(l, sport) for l in laps[:60]]
+        if plyw and dlugosci:
+            wynik["dlugosci"] = [_dlugosc(x) for l in laps for x in (l.get("lengthDTOs") or [])][:200]
     except Exception as e:  # noqa: BLE001 - brak okrążeń nie przekreśla reszty
-        wynik["okrazenia_blad"] = str(e)[:200]
+        bledy["okrazenia"] = str(e)[:200]
+    for klucz, metoda, jedn in (("strefy_hr", "get_activity_hr_in_timezones", "od_bpm"),
+                                ("strefy_mocy", "get_activity_power_in_timezones", "od_w")):
+        try:
+            st = getattr(klient, metoda)(aid) or []
+            if any(z.get("secsInZone") for z in st):
+                wynik[klucz] = [{"strefa": z.get("zoneNumber"), jedn: z.get("zoneLowBoundary"),
+                                 "min": _min(z.get("secsInZone"))} for z in st]
+        except Exception as e:  # noqa: BLE001
+            bledy[klucz] = str(e)[:200]
     try:
-        strefy = klient.get_activity_hr_in_timezones(aid) or []
-        wynik["strefy_hr"] = [_bez_none({"strefa": z.get("zoneNumber"), "od_bpm": z.get("zoneLowBoundary"),
-                                         "min": _min(z.get("secsInZone"))}) for z in strefy]
+        p = klient.get_activity_weather(aid) or {}
+        if p.get("temp") is not None:
+            # Garmin podaje pogodę w jednostkach imperialnych (°F, mph)
+            wynik["pogoda"] = {"temp_c": _f_na_c(p.get("temp")), "odczuwalna_c": _f_na_c(p.get("apparentTemp")),
+                               "wilgotnosc_proc": p.get("relativeHumidity"),
+                               "wiatr_kmh": _r(p["windSpeed"] * 1.609, 0) if p.get("windSpeed") is not None else None,
+                               "wiatr_kierunek": (p.get("windDirectionCompassPoint") or "").upper() or None,
+                               "opis": g(p, "weatherTypeDTO.desc")}
     except Exception as e:  # noqa: BLE001
-        wynik["strefy_hr_blad"] = str(e)[:200]
+        bledy["pogoda"] = str(e)[:200]
+    try:
+        sp = klient.get_activity_gear(aid) or []
+        if sp:
+            wynik["sprzet"] = [{"nazwa": x.get("displayName") or x.get("customMakeModel"),
+                                "model": x.get("customMakeModel"), "typ": x.get("gearTypeName"),
+                                "status": x.get("gearStatusName"),
+                                "limit_km": _r(x["maximumMeters"] / 1000, 0) if x.get("maximumMeters") else None}
+                               for x in sp]
+    except Exception as e:  # noqa: BLE001
+        bledy["sprzet"] = str(e)[:200]
+    if bledy:
+        wynik["bledy"] = bledy
     return wynik
+
+
+# ----------------------------------------------------------------- strumienie (próbkowane)
+
+METRYKI_STRUMIENI = {
+    "hr": (["directHeartRate"], 1, 0),
+    "moc_w": (["directPower"], 1, 0),
+    "kadencja": (["directBikeCadence", "directDoubleCadence", "directRunCadence"], 1, 0),
+    "predkosc_kmh": (["directSpeed"], 3.6, 1),
+    "wysokosc_m": (["directElevation"], 1, 1),
+    "temperatura_c": (["directAirTemperature"], 1, 1),
+    "dystans_m": (["sumDistance"], 1, 0),
+    "kontakt_ms": (["directGroundContactTime"], 1, 0),
+    "oscylacja_cm": (["directVerticalOscillation"], 1, 1),
+    "dlugosc_kroku_cm": (["directStrideLength"], 1, 0),
+    "ratio_pionowe_proc": (["directVerticalRatio"], 1, 1),
+    "oddech": (["directRespirationRate"], 1, 0),
+}
+DOMYSLNE_STRUMIENIE = ["hr", "moc_w", "kadencja", "predkosc_kmh", "wysokosc_m"]
+MAX_PUNKTOW = 1500
+
+
+def strumienie(klient, activity_id, metryki=None, krok_s=10) -> dict:
+    """Przebieg w czasie wybranych metryk, próbkowany co krok_s sekund (Garmin próbkuje po swojej stronie)."""
+    aid = _id(activity_id, "activity_id")
+    try:
+        krok = max(1, int(krok_s or 10))
+    except (TypeError, ValueError):
+        raise BladDanych("krok_s musi być liczbą sekund")
+    metryki = metryki or DOMYSLNE_STRUMIENIE
+    zle = [m for m in metryki if m not in METRYKI_STRUMIENI]
+    if zle:
+        raise BladDanych(f"Nieznane metryki: {', '.join(zle)}. Dostępne: {', '.join(METRYKI_STRUMIENI)}")
+    s = (klient.get_activity(aid) or {}).get("summaryDTO") or {}
+    czas = float(s.get("elapsedDuration") or s.get("duration") or 3600)
+    punkty = int(min(MAX_PUNKTOW, max(10, czas // krok)))
+    d = klient.get_activity_details(aid, maxchart=punkty, maxpoly=0) or {}
+    idx = {m.get("key"): m.get("metricsIndex") for m in d.get("metricDescriptors") or []}
+    kol, zrodla = ["czas_s"], [(idx.get("sumElapsedDuration"), 1, 0)]
+    pominiete = []
+    for m in metryki:
+        klucze, mnoznik, miejsca = METRYKI_STRUMIENI[m]
+        k = next((x for x in klucze if x in idx), None)
+        if k is None:
+            pominiete.append(m)
+            continue
+        kol.append(m)
+        zrodla.append((idx[k], mnoznik, miejsca))
+    wiersze = []
+    for wpis in d.get("activityDetailMetrics") or []:
+        v = wpis.get("metrics") or []
+        wiersz = []
+        for i, mn, mc in zrodla:
+            x = v[i] if i is not None and i < len(v) else None
+            wiersz.append(round(x * mn, mc) if isinstance(x, (int, float)) else None)
+        wiersze.append(wiersz)
+    return {
+        "activity_id": int(aid), "kolumny": kol, "wiersze": wiersze, "punktow": len(wiersze),
+        "krok_s_przyblizony": round(czas / len(wiersze), 1) if wiersze else None,
+        "brak_metryk": pominiete or None,
+        "uwaga": "Do analiz 1 Hz użyj pliku FIT (pobierz_fit → ingest_fit.py).",
+    }
+
+
+# ----------------------------------------------------------------- skład ciała
+
+def _g_na_kg(v):
+    return _r(v / 1000, 1) if isinstance(v, (int, float)) else None
+
+
+def sklad_ciala(klient, od=None, do=None, nawodnienie: bool = False) -> dict:
+    poczatek, koniec = zakres(od, do, 30, 366)
+    d = klient.get_body_composition(poczatek.isoformat(), koniec.isoformat()) or {}
+    dni = []
+    for x in d.get("dateWeightList") or []:
+        dni.append({"data": x.get("calendarDate"), "masa_kg": _g_na_kg(x.get("weight")),
+                    "tkanka_tluszczowa_proc": _r(x.get("bodyFat"), 1), "masa_miesniowa_kg": _g_na_kg(x.get("muscleMass")),
+                    "masa_kostna_kg": _g_na_kg(x.get("boneMass")), "woda_proc": _r(x.get("bodyWater"), 1),
+                    "bmi": _r(x.get("bmi"), 1), "zrodlo": x.get("sourceType")})
+    wynik = {"od": poczatek.isoformat(), "do": koniec.isoformat(), "pomiary": dni,
+             "srednia": {"masa_kg": _g_na_kg(g(d, "totalAverage.weight")),
+                         "tkanka_tluszczowa_proc": _r(g(d, "totalAverage.bodyFat"), 1)}}
+    if not dni:
+        wynik["uwaga"] = "Brak pomiarów w Garmin Connect w tym okresie (waga Index albo wpis ręczny)."
+    if nawodnienie:
+        if (koniec - poczatek).days > 30:
+            raise BladDanych("Nawodnienie dzień po dniu: najwyżej 31 dni naraz")
+        wynik["nawodnienie"] = []
+        for dz in _dni(poczatek, koniec):
+            try:
+                h = klient.get_hydration_data(dz.isoformat()) or {}
+                wynik["nawodnienie"].append({"data": dz.isoformat(), "wypite_ml": h.get("valueInML"),
+                                             "cel_ml": h.get("goalInML")})
+            except Exception as e:  # noqa: BLE001
+                wynik["nawodnienie"].append({"data": dz.isoformat(), "blad": str(e)[:100]})
+    return wynik
+
+
+# ----------------------------------------------------------------- historia metryk
+
+KOLUMNY_HISTORII = ["data", "vo2max_bieg", "vo2max_rower", "status", "obciazenie_ostre", "obciazenie_przewlekle",
+                    "acwr", "gotowosc", "gotowosc_poziom", "hrv_noc", "hrv_7d", "hrv_status", "hrv_norma_dol",
+                    "hrv_norma_gora", "hr_spoczynkowe", "endurance_score", "hill_score", "ftp_rower_w",
+                    "prog_hr", "prog_tempo_min_km", "prog_moc_biegowa_w"]
+
+
+def historia_metryk(klient, od=None, do=None, agregacja=None) -> dict:
+    """Dzienna albo tygodniowa tabela metryk formy (do 1 roku)."""
+    poczatek, koniec = zakres(od, do, 90, 366)
+    agregacja = agregacja or ("tydzien" if (koniec - poczatek).days > 92 else "dzien")
+    if agregacja not in ("dzien", "tydzien"):
+        raise BladDanych("agregacja: dzien albo tydzien")
+    o, k = poczatek.isoformat(), koniec.isoformat()
+    dni: dict[str, dict] = {}
+    bledy = {}
+
+    def dzien(dt):
+        dt = str(dt)[:10]
+        return dni.setdefault(dt, {"data": dt})
+
+    def zrodlo(nazwa, fn):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            bledy[nazwa] = str(e)[:150]
+
+    def vo2():
+        for x in klient.get_max_metrics_range(o, k) or []:
+            for sport, kl in (("generic", "vo2max_bieg"), ("cycling", "vo2max_rower")):
+                v = x.get(sport) or {}
+                if v.get("calendarDate") and v.get("vo2MaxPreciseValue"):
+                    if sport == "generic" and str(v.get("sport") or "").upper() == "CYCLING":
+                        continue                     # „generic” bywa kopią rowerowego
+                    dzien(v["calendarDate"])[kl] = v["vo2MaxPreciseValue"]
+
+    def status():
+        rep = (klient.get_weekly_training_status(o, k) or {}).get("reportData") or {}
+        for wpisy in rep.values():
+            for x in wpisy or []:
+                if x.get("primaryTrainingDevice") is False:
+                    continue
+                a = x.get("acuteTrainingLoadDTO") or {}
+                dzien(x["calendarDate"]).update({
+                    "status": x.get("trainingStatusFeedbackPhrase"),
+                    "obciazenie_ostre": a.get("dailyTrainingLoadAcute"),
+                    "obciazenie_przewlekle": a.get("dailyTrainingLoadChronic"),
+                    "acwr": _r(a.get("dailyAcuteChronicWorkloadRatio"), 2)})
+
+    def gotowosc():
+        lista = klient.get_training_readiness_range(o, k) or []
+        for x in sorted(lista, key=lambda y: (y.get("inputContext") != "AFTER_WAKEUP_RESET", y.get("timestamp") or "")):
+            d = dzien(x["calendarDate"])
+            if "gotowosc" not in d:                  # poranna wartość ma pierwszeństwo
+                d["gotowosc"], d["gotowosc_poziom"] = x.get("score"), x.get("level")
+
+    def hrv():
+        for x in (klient.get_hrv_data_range(o, k) or {}).get("hrvSummaries") or []:
+            dzien(x["calendarDate"]).update({
+                "hrv_noc": x.get("lastNightAvg"), "hrv_7d": x.get("weeklyAvg"), "hrv_status": x.get("status"),
+                "hrv_norma_dol": g(x, "baseline.balancedLow"), "hrv_norma_gora": g(x, "baseline.balancedUpper")})
+
+    def rhr():
+        for x in klient.get_rhr_daily(o, k) or []:
+            if x.get("value") is not None:
+                dzien(x["calendarDate"])["hr_spoczynkowe"] = _r(x["value"], 0)
+
+    def endurance():
+        e = klient.get_endurance_score(o, k, aggregation="daily") or {}
+        for dt, v in (e.get("groupMap") or {}).items():
+            dzien(dt)["endurance_score"] = v.get("groupAverage")
+
+    def hill():
+        for x in (klient.get_hill_score(o, k) or {}).get("hillScoreDTOList") or []:
+            if x.get("primaryTrainingDevice") is not False:
+                dzien(x["calendarDate"])["hill_score"] = x.get("overallScore")
+
+    def ftp():
+        f = klient.get_functional_threshold_power_range(o, k, sport="CYCLING") or []
+        for x in (f if isinstance(f, list) else f.get("values") or []):
+            dt, v = x.get("calendarDate") or x.get("from"), x.get("value") or x.get("functionalThresholdPower")
+            if dt and v:
+                dzien(dt)["ftp_rower_w"] = _r(v, 0)
+
+    def prog():
+        lt = klient.get_lactate_threshold(latest=False, start_date=o, end_date=k) or {}
+        for x in lt.get("heart_rate") or []:
+            if x.get("value"):
+                dzien(x.get("from") or x.get("calendarDate"))["prog_hr"] = _r(x["value"], 0)
+        for x in lt.get("speed") or []:
+            if x.get("value"):
+                # Garmin podaje prędkość progu w m/s ×10 albo w m/s - rozróżniamy po wielkości
+                v = x["value"] / 10 if x["value"] > 10 else x["value"]
+                dzien(x.get("from") or x.get("calendarDate"))["prog_tempo_min_km"] = _tempo_km(v)
+        for x in lt.get("power") or []:
+            if x.get("value"):
+                dzien(x.get("from") or x.get("calendarDate"))["prog_moc_biegowa_w"] = _r(x["value"], 0)
+
+    for nazwa, fn in (("vo2max", vo2), ("status", status), ("gotowosc", gotowosc), ("hrv", hrv),
+                      ("hr_spoczynkowe", rhr), ("endurance_score", endurance), ("hill_score", hill),
+                      ("ftp", ftp), ("prog_mleczanowy", prog)):
+        zrodlo(nazwa, fn)
+
+    wiersze = [dni[d] for d in sorted(dni) if o <= d <= k]
+    if agregacja == "tydzien":
+        tyg: dict[str, list] = {}
+        for w in wiersze:
+            dt = datetime.date.fromisoformat(w["data"])
+            pon = (dt - datetime.timedelta(days=dt.weekday())).isoformat()
+            tyg.setdefault(pon, []).append(w)
+        agreg = []
+        for pon, lista in sorted(tyg.items()):
+            r = {"data": pon}
+            for kol in KOLUMNY_HISTORII[1:]:
+                wart = [w[kol] for w in lista if w.get(kol) is not None]
+                if not wart:
+                    r[kol] = None
+                elif isinstance(wart[0], (int, float)):
+                    r[kol] = _r(sum(wart) / len(wart), 1)
+                else:
+                    r[kol] = wart[-1]                # tekst (status) - ostatni w tygodniu
+            agreg.append(r)
+        wiersze = agreg
+    kolumny = [c for c in KOLUMNY_HISTORII if c == "data" or any(w.get(c) is not None for w in wiersze)]
+    return {"od": o, "do": k, "agregacja": agregacja, "kolumny": kolumny,
+            "wiersze": [[w.get(c) for c in kolumny] for w in wiersze],
+            "puste_zrodla": [c for c in KOLUMNY_HISTORII[1:] if c not in kolumny] or None,
+            "bledy": bledy or None}
 
 
 # ----------------------------------------------------------------- kalendarz
@@ -232,13 +568,13 @@ def kalendarz(klient, od=None, do=None) -> list[dict]:
 
 # ----------------------------------------------------------------- wellness i gotowość
 
-def _dzien_wellness(klient, dzien: datetime.date) -> dict:
+def _dzien_wellness(klient, dzien: datetime.date, pola=POLA_WELLNESS_DOMYSLNE) -> dict:
     ds = dzien.isoformat()
     wynik: dict[str, Any] = {"data": ds}
     bledy = {}
 
     try:
-        u = klient.get_user_summary(ds) or {}
+        u = (klient.get_user_summary(ds) if "podsumowanie" in pola else None) or {}
         wynik.update({
             "hr_spoczynkowe": u.get("restingHeartRate"),
             "hr_spoczynkowe_7d": u.get("lastSevenDaysAvgRestingHeartRate"),
@@ -257,7 +593,7 @@ def _dzien_wellness(klient, dzien: datetime.date) -> dict:
         bledy["podsumowanie"] = str(e)[:200]
 
     try:
-        s = klient.get_sleep_data(ds) or {}
+        s = (klient.get_sleep_data(ds) if "sen" in pola else None) or {}
         dto = s.get("dailySleepDTO") or {}
         wynik.update({
             "sen_h": _h(dto.get("sleepTimeSeconds")),
@@ -274,7 +610,7 @@ def _dzien_wellness(klient, dzien: datetime.date) -> dict:
         bledy["sen"] = str(e)[:200]
 
     try:
-        h = klient.get_hrv_data(ds) or {}
+        h = (klient.get_hrv_data(ds) if "hrv" in pola else None) or {}
         hs = h.get("hrvSummary") or {}
         wynik.update({
             "hrv_noc": hs.get("lastNightAvg") or wynik.get("hrv_noc"),
@@ -291,10 +627,27 @@ def _dzien_wellness(klient, dzien: datetime.date) -> dict:
     return _bez_none(wynik)
 
 
-def wellness(klient, od=None, do=None) -> list[dict]:
-    """Dzień po dniu: sen, HRV, tętno spoczynkowe, Body Battery, stres, kroki."""
+POLA_WELLNESS = ("podsumowanie", "sen", "hrv")
+
+
+def wellness(klient, od=None, do=None, pola=None) -> Any:
+    """Dzień po dniu: sen, HRV, tętno spoczynkowe, Body Battery, stres, kroki (do 92 dni).
+    pola - które źródła pobrać (podsumowanie, sen, hrv); mniej źródeł = mniej zapytań do Garmina."""
+    import time as _time
     poczatek, koniec = zakres(od, do, 7, MAX_DNI_WELLNESS)
-    return [_dzien_wellness(klient, d) for d in _dni(poczatek, koniec)]
+    pola = list(pola or POLA_WELLNESS)
+    zle = [p for p in pola if p not in POLA_WELLNESS]
+    if zle:
+        raise BladDanych(f"Nieznane pola: {', '.join(zle)}. Dostępne: {', '.join(POLA_WELLNESS)}")
+    start, wynik = _time.monotonic(), []
+    for d in _dni(poczatek, koniec):
+        if _time.monotonic() - start > CZAS_WELLNESS_S:
+            return {"dni": wynik, "przerwano": True,
+                    "kontynuuj_od": d.isoformat(),
+                    "uwaga": "Garmin odpowiada wolno - pobrano część dni. Wywołaj ponownie z od = kontynuuj_od "
+                             "albo ogranicz pola."}
+        wynik.append(_dzien_wellness(klient, d, pola))
+    return wynik
 
 
 def gotowosc(klient, dzien=None) -> dict:

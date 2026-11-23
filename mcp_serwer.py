@@ -187,11 +187,23 @@ def t_aktywnosci(a: dict) -> list:
 def t_trening(a: dict) -> Any:
     if a.get("surowe"):
         return _z_garminem(lambda k: garmin_dane.przytnij(k.get_activity(str(a.get("activity_id")))))
-    return _z_garminem(lambda k: garmin_dane.trening(k, a.get("activity_id")))
+    return _z_garminem(lambda k: garmin_dane.trening(k, a.get("activity_id"), bool(a.get("dlugosci"))))
 
 
-def t_wellness(a: dict) -> list:
-    return _z_garminem(lambda k: garmin_dane.wellness(k, a.get("od"), a.get("do")))
+def t_wellness(a: dict) -> Any:
+    return _z_garminem(lambda k: garmin_dane.wellness(k, a.get("od"), a.get("do"), a.get("pola")))
+
+
+def t_strumienie(a: dict) -> dict:
+    return _z_garminem(lambda k: garmin_dane.strumienie(k, a.get("activity_id"), a.get("metryki"), a.get("krok_s", 10)))
+
+
+def t_sklad_ciala(a: dict) -> dict:
+    return _z_garminem(lambda k: garmin_dane.sklad_ciala(k, a.get("od"), a.get("do"), bool(a.get("nawodnienie"))))
+
+
+def t_historia_metryk(a: dict) -> dict:
+    return _z_garminem(lambda k: garmin_dane.historia_metryk(k, a.get("od"), a.get("do"), a.get("agregacja")))
 
 
 def t_gotowosc(a: dict) -> dict:
@@ -438,17 +450,49 @@ NARZEDZIA: dict[str, dict] = {
     },
     "trening": {
         "fn": t_trening, "ro": True,
-        "opis": "Szczegóły jednej aktywności: podsumowanie, okrążenia (interwały) i czas w strefach tętna. "
+        "opis": "Szczegóły jednej aktywności: podsumowanie, RPE i samopoczucie wpisane po treningu, zgodność z planem, "
+                "okrążenia (czas, dystans, HR, moc śr/max/NP, tempo, kadencja; w pływaniu styl, długości, SWOLF, "
+                "tempo /100 m), czas w strefach HR i mocy, pływanie, dynamika biegu, pogoda (°C, km/h), sprzęt. "
+                "Sekcje, które nie dotyczą sportu, są null. dlugosci=true dodaje każdą długość basenu. "
                 "surowe=true zwraca pełną odpowiedź Garmina (przyciętą).",
         "schema": {"type": "object", "properties": {
             "activity_id": {"type": ["string", "integer"], "description": "id z narzędzia aktywnosci"},
-            "surowe": {"type": "boolean"}}, "required": ["activity_id"]},
+            "dlugosci": {"type": "boolean"}, "surowe": {"type": "boolean"}}, "required": ["activity_id"]},
     },
     "wellness": {
         "fn": t_wellness, "ro": True,
-        "opis": "Regeneracja dzień po dniu (domyślnie 7 dni, najwyżej 14): sen i jego fazy, sleep score, HRV "
-                "(noc, średnia 7 dni, status, norma), tętno spoczynkowe, Body Battery, stres, kroki.",
-        "schema": {"type": "object", "properties": {"od": _DATA, "do": _DATA}},
+        "opis": "Regeneracja dzień po dniu (domyślnie 7 dni, najwyżej 92): sen i jego fazy, sleep score, HRV "
+                "(noc, średnia 7 dni, status, norma), tętno spoczynkowe, Body Battery, stres, kroki. pola ogranicza "
+                "źródła (podsumowanie, sen, hrv) - przy długich zakresach szybciej. Gdy Garmin odpowiada wolno, "
+                "zwraca część dni i kontynuuj_od. Trendy HRV/tętna na rok: historia_metryk.",
+        "schema": {"type": "object", "properties": {
+            "od": _DATA, "do": _DATA,
+            "pola": {"type": "array", "items": {"type": "string", "enum": list(garmin_dane.POLA_WELLNESS)}}}},
+    },
+    "strumienie": {
+        "fn": t_strumienie, "ro": True,
+        "opis": "Przebieg aktywności w czasie, próbkowany co krok_s sekund (domyślnie 10, najwyżej 1500 punktów): "
+                "tabela kolumny + wiersze. Metryki: " + ", ".join(garmin_dane.METRYKI_STRUMIENI)
+                + " (domyślnie hr, moc_w, kadencja, predkosc_kmh, wysokosc_m). Do analiz 1 Hz - plik FIT.",
+        "schema": {"type": "object", "properties": {
+            "activity_id": {"type": ["string", "integer"]},
+            "metryki": {"type": "array", "items": {"type": "string", "enum": list(garmin_dane.METRYKI_STRUMIENI)}},
+            "krok_s": {"type": "integer", "minimum": 1}}, "required": ["activity_id"]},
+    },
+    "sklad_ciala": {
+        "fn": t_sklad_ciala, "ro": True,
+        "opis": "Masa i skład ciała dzień po dniu (do 1 roku): masa, tkanka tłuszczowa, masa mięśniowa i kostna, "
+                "woda, BMI, źródło pomiaru. nawodnienie=true dodaje wypitą wodę (do 31 dni).",
+        "schema": {"type": "object", "properties": {"od": _DATA, "do": _DATA, "nawodnienie": {"type": "boolean"}}},
+    },
+    "historia_metryk": {
+        "fn": t_historia_metryk, "ro": True,
+        "opis": "Trend formy do 1 roku jako tabela (kolumny + wiersze), dziennie albo tygodniowo (domyślnie tygodniowo "
+                "powyżej 92 dni): VO2max bieg/rower, Training Status, obciążenie ostre/przewlekłe, ACWR, Training "
+                "Readiness (poranny), HRV noc/7 dni/status/norma, tętno spoczynkowe, Endurance i Hill Score, FTP, "
+                "próg mleczanowy. Kolumny bez danych są pomijane (lista w puste_zrodla).",
+        "schema": {"type": "object", "properties": {
+            "od": _DATA, "do": _DATA, "agregacja": {"type": "string", "enum": ["dzien", "tydzien"]}}},
     },
     "gotowosc": {
         "fn": t_gotowosc, "ro": True,
