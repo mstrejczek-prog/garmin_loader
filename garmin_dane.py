@@ -165,6 +165,8 @@ def _okrazenie(l: dict, sport: str = "") -> dict:
         "przewyzszenie_m": _r(l.get("elevationGain"), 0),
         "typ": l.get("intensityType"),
     }
+    if plyw and not l.get("numberOfActiveLengths") and not l.get("distance"):
+        return _bez_none({"nr": w["nr"], "typ": "przerwa", "czas_min": w["czas_min"], "hr_sr": w["hr_sr"]})
     if plyw:
         w.update({
             "styl": (l.get("swimStroke") or "").lower() or None,
@@ -235,7 +237,10 @@ def trening(klient, activity_id, dlugosci: bool = False) -> dict:
         "plywanie": _bez_none({
             "basen_m": _r(s.get("poolLength"), 0),
             "dlugosci_aktywne": s.get("numberOfActiveLengths"),
-            "tempo_100m": _tempo_100m(s.get("averageSpeed")),
+            # averageSpeed liczy też przerwy - tempo z dystansu i czasu ruchu
+            "tempo_100m": _tempo_100m(s["distance"] / s["movingDuration"]) if s.get("distance") and s.get("movingDuration")
+            else _tempo_100m(s.get("averageSpeed")),
+            "tempo_100m_z_przerwami": _tempo_100m(s.get("averageSpeed")),
             "swolf_sr": _r(s.get("averageSWOLF"), 0),
             "ruchy_na_dlugosc_sr": _r(s.get("averageStrokes"), 1),
             "ruchy_razem": s.get("totalNumberOfStrokes"),
@@ -483,8 +488,8 @@ def historia_metryk(klient, od=None, do=None, agregacja=None) -> dict:
                 dzien(x.get("from") or x.get("calendarDate"))["prog_hr"] = _r(x["value"], 0)
         for x in lt.get("speed") or []:
             if x.get("value"):
-                # Garmin podaje prędkość progu w m/s ×10 albo w m/s - rozróżniamy po wielkości
-                v = x["value"] / 10 if x["value"] > 10 else x["value"]
+                # Garmin podaje prędkość progu w (m/s)/10, np. 0.383 = 3.83 m/s = 4:21/km
+                v = x["value"] * 10 if x["value"] < 2 else x["value"]
                 dzien(x.get("from") or x.get("calendarDate"))["prog_tempo_min_km"] = _tempo_km(v)
         for x in lt.get("power") or []:
             if x.get("value"):

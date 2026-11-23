@@ -369,7 +369,9 @@ class AtrapaP2(AtrapaDane):
                                  "averageMovingSpeed": 0.5, "swimStroke": "FREESTYLE", "numberOfActiveLengths": 4,
                                  "averageSWOLF": 60, "averageStrokes": 10,
                                  "lengthDTOs": [{"lengthIndex": 1, "swimStroke": "FREESTYLE", "duration": 49.6,
-                                                 "averageSpeed": 0.504, "totalNumberOfStrokes": 10, "averageSWOLF": 60}]}]}
+                                                 "averageSpeed": 0.504, "totalNumberOfStrokes": 10, "averageSWOLF": 60}]},
+                                {"lapIndex": 2, "duration": 120, "distance": 0, "numberOfActiveLengths": 0,
+                                 "averageSWOLF": 0, "averageStrokes": 0}]}
         return {"lapDTOs": [{"lapIndex": 1, "duration": 300, "distance": 1000, "averageSpeed": 3.333, "averagePower": 340,
                              "maxPower": 420}]}
 
@@ -429,7 +431,8 @@ class AtrapaP2(AtrapaDane):
         return []
 
     def get_lactate_threshold(self, latest=True, start_date=None, end_date=None):
-        raise RuntimeError("niedostępne")
+        return {"heart_rate": [{"from": "2026-11-02", "value": 175}],
+                "speed": [{"from": "2026-11-02", "value": 0.3833}], "power": []}
 
 
 class TestMcpP2(BazaMcp):
@@ -454,6 +457,7 @@ class TestMcpP2(BazaMcp):
         d = json.loads(tekst)
         self.assertIsNone(d["dynamika_biegu"])
         self.assertEqual((d["plywanie"]["basen_m"], d["plywanie"]["swolf_sr"], d["plywanie"]["tempo_100m"]), (25, 84, "3:20"))
+        self.assertEqual(d["okrazenia"][1], {"nr": 2, "typ": "przerwa", "czas_min": 2.0})
         o = d["okrazenia"][0]
         self.assertEqual((o["styl"], o["dlugosci"], o["tempo_100m"], o["swolf"]), ("freestyle", 4, "3:20", 60))
         self.assertEqual(d["dlugosci"][0]["tempo_100m"], "3:18")
@@ -485,7 +489,7 @@ class TestMcpP2(BazaMcp):
                          (52.1, 52.8, 69, 0.41))
         self.assertEqual((wiersz["hrv_noc"], wiersz["hr_spoczynkowe"], wiersz["endurance_score"]), (40, 53, 7370))
         self.assertIn("ftp_rower_w", d["puste_zrodla"])
-        self.assertIn("prog_mleczanowy", d["bledy"])
+        self.assertEqual((wiersz["prog_hr"], wiersz["prog_tempo_min_km"]), (175, "4:21"))
         _, tekst = self.narzedzie("historia_metryk", od="2026-01-01", do="2026-11-22")
         d = json.loads(tekst)
         self.assertEqual(d["agregacja"], "tydzien")
