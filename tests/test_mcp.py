@@ -114,7 +114,7 @@ class TestMcp(BazaMcp):
         self.assertTrue({"format_planu", "sprawdz_plan", "wyslij_plan", "kalendarz", "aktywnosci",
                          "trening", "wellness", "gotowosc", "usun_z_kalendarza", "moje_ustawienia",
                          "serie", "plan_treningu", "plan_vs_wykonanie", "pobierz_fit", "surowe_dane",
-                         "strumienie", "sklad_ciala", "historia_metryk"} <= nazwy)
+                         "strumienie", "sklad_ciala", "historia_metryk", "sprzet", "rekordy", "prognozy"} <= nazwy)
         self.assertEqual(self.c.get("/mcp", headers={"Authorization": "Bearer tajne"}).status_code, 405)
         self.assertEqual(self.rpc("nie/ma").get_json()["error"]["code"], -32601)
 
@@ -505,6 +505,58 @@ class TestMcpP2(BazaMcp):
         self.assertNotIn("hr_spoczynkowe", d)
         w, _ = self.narzedzie("wellness", pola=["xyz"])
         self.assertTrue(w["isError"])
+
+
+class AtrapaP3(AtrapaDane):
+    def get_gear_list(self, start=0, limit=20, gear_statuses=None):
+        return [{"uuid": "u-1", "gearType": "SHOES", "status": "ACTIVE", "name": "Buty", "brand": "Model X",
+                 "maxUsageDistanceMeters": 644000.0, "numActivitiesLinked": 134, "durationUsedSeconds": 386855,
+                 "distanceUsedMeters": 1141115.3, "firstUseDate": "2025-07-31", "daysUsed": 121}]
+
+    def get_personal_record(self):
+        return [{"typeId": 3, "activityType": "running", "value": 1199.75, "activityId": 5, "activityName": "Bieg",
+                 "actStartDateTimeInGMTFormatted": "2026-10-11T07:59:29.0"},
+                {"typeId": 10, "activityType": "road_biking", "value": 207.71},
+                {"typeId": 20, "activityType": "lap_swimming", "value": 597.07},
+                {"typeId": 7, "activityType": "running", "value": 21355.76},
+                {"typeId": 99, "activityType": None, "value": 1}]
+
+    def get_race_predictions(self, startdate=None, enddate=None, _type=None):
+        if _type == "monthly":
+            return [{"calendarDate": "2026-10-31", "time5K": 1200, "time10K": 2500, "timeHalfMarathon": 5400,
+                     "timeMarathon": 12300}]
+        return {"calendarDate": "2026-11-23", "time5K": 1184, "time10K": 2450, "timeHalfMarathon": 5301,
+                "timeMarathon": 12307}
+
+
+class TestMcpP3(BazaMcp):
+    def setUp(self):
+        super().setUp()
+        garmin_io._nowy_klient = AtrapaP3
+
+    def test_sprzet(self):
+        _, tekst = self.narzedzie("sprzet")
+        b = json.loads(tekst)[0]
+        self.assertEqual((b["typ"], b["status"], b["przebieg_km"], b["limit_km"], b["zuzycie_proc"], b["czas_h"]),
+                         ("buty", "aktywny", 1141, 644, 177, 107.5))
+
+    def test_rekordy(self):
+        _, tekst = self.narzedzie("rekordy")
+        r = json.loads(tekst)
+        piec = [x for x in r if x["rekord"] == "5 km"][0]
+        self.assertEqual((piec["czas"], piec["tempo_min_km"], piec["data"]), ("20:00", "4:00", "2026-10-11"))
+        self.assertEqual([x for x in r if x["rekord"] == "najwyższa moc 20 min"][0]["moc_w"], 208)
+        self.assertEqual([x for x in r if x["rekord"] == "400 m"][0]["tempo_100m"], "2:29")
+        self.assertEqual([x for x in r if x["rekord"] == "najdłuższy bieg"][0]["dystans_km"], 21.36)
+        _, tekst = self.narzedzie("rekordy", sport="plywanie")
+        self.assertEqual([x["rekord"] for x in json.loads(tekst)], ["400 m"])
+
+    def test_prognozy(self):
+        _, tekst = self.narzedzie("prognozy", od="2026-06-01", do="2026-11-22")
+        d = json.loads(tekst)
+        self.assertEqual(d["aktualne"]["półmaraton"], {"czas": "1:28:21", "tempo_min_km": "4:11"})
+        self.assertEqual(d["aktualne"]["5 km"]["czas"], "19:44")
+        self.assertEqual(d["miesiecznie"][0]["maraton"]["czas"], "3:25:00")
 
 
 if __name__ == "__main__":

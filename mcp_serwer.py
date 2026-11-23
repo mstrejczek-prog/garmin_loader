@@ -202,6 +202,18 @@ def t_sklad_ciala(a: dict) -> dict:
     return _z_garminem(lambda k: garmin_dane.sklad_ciala(k, a.get("od"), a.get("do"), bool(a.get("nawodnienie"))))
 
 
+def t_sprzet(a: dict) -> list:
+    return _z_garminem(lambda k: garmin_dane.sprzet(k, bool(a.get("wycofany"))))
+
+
+def t_rekordy(a: dict) -> list:
+    return _z_garminem(lambda k: garmin_dane.rekordy(k, a.get("sport")))
+
+
+def t_prognozy(a: dict) -> dict:
+    return _z_garminem(lambda k: garmin_dane.prognozy(k, a.get("od"), a.get("do")))
+
+
 def t_historia_metryk(a: dict) -> dict:
     return _z_garminem(lambda k: garmin_dane.historia_metryk(k, a.get("od"), a.get("do"), a.get("agregacja")))
 
@@ -494,6 +506,26 @@ NARZEDZIA: dict[str, dict] = {
                 "próg mleczanowy. Kolumny bez danych są pomijane (lista w puste_zrodla).",
         "schema": {"type": "object", "properties": {
             "od": _DATA, "do": _DATA, "agregacja": {"type": "string", "enum": ["dzien", "tydzien"]}}},
+    },
+    "sprzet": {
+        "fn": t_sprzet, "ro": True,
+        "opis": "Buty i rowery z Garmin Connect: przebieg km, limit km, zużycie %, liczba aktywności, czas, od kiedy, "
+                "status. wycofany=true dołącza wycofany sprzęt.",
+        "schema": {"type": "object", "properties": {"wycofany": {"type": "boolean"}}},
+    },
+    "rekordy": {
+        "fn": t_rekordy, "ro": True,
+        "opis": "Rekordy osobiste: bieg (1 km, mila, 5 km, 10 km, półmaraton, maraton, najdłuższy bieg), rower "
+                "(najdłuższa jazda, przewyższenie, moc 20 min, 40 km), pływanie (najdłuższe, 100/400/750/1000/1500 m), "
+                "kroki. Z czasem, tempem, datą i aktywnością.",
+        "schema": {"type": "object", "properties": {
+            "sport": {"type": "string", "enum": ["bieg", "rower", "plywanie", "kroki"]}}},
+    },
+    "prognozy": {
+        "fn": t_prognozy, "ro": True,
+        "opis": "Prognozy czasów startowych Garmina (5 km, 10 km, półmaraton, maraton) z tempem; z od/do (do roku) "
+                "także historia miesięczna. To szacunek Garmina, nie wynik.",
+        "schema": {"type": "object", "properties": {"od": _DATA, "do": _DATA}},
     },
     "gotowosc": {
         "fn": t_gotowosc, "ro": True,

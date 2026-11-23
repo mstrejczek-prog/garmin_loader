@@ -1034,6 +1034,113 @@ def plan_vs_wykonanie(klient, activity_id) -> dict:
     return wynik
 
 
+# ----------------------------------------------------------------- sprzęt, rekordy, prognozy (P3)
+
+def _czas_hms(sek):
+    if not isinstance(sek, (int, float)) or sek <= 0:
+        return None
+    sek = int(round(sek))
+    h, r = divmod(sek, 3600)
+    m, s_ = divmod(r, 60)
+    return f"{h}:{m:02d}:{s_:02d}" if h else f"{m}:{s_:02d}"
+
+
+def sprzet(klient, wycofany: bool = False) -> list[dict]:
+    """Buty i rowery z przebiegiem, limitem, liczbą aktywności i statusem."""
+    try:
+        lista = klient.get_gear_list(0, 100, ["ACTIVE", "RETIRED"] if wycofany else None) or []
+    except Exception:  # noqa: BLE001 - starsze wersje endpointu nie znają filtra statusu
+        lista = klient.get_gear_list(0, 100) or []
+    wynik = []
+    for x in lista:
+        km = _r((x.get("distanceUsedMeters") or 0) / 1000, 0) if x.get("distanceUsedMeters") is not None else None
+        limit = _r(x["maxUsageDistanceMeters"] / 1000, 0) if x.get("maxUsageDistanceMeters") else None
+        wynik.append({
+            "nazwa": x.get("name"), "model": x.get("brand"),
+            "typ": {"SHOES": "buty", "BIKE": "rower"}.get(x.get("gearType"), (x.get("gearType") or "").lower() or None),
+            "status": {"ACTIVE": "aktywny", "RETIRED": "wycofany"}.get(x.get("status"), x.get("status")),
+            "przebieg_km": km, "limit_km": limit,
+            "zuzycie_proc": _r(km / limit * 100, 0) if km is not None and limit else None,
+            "aktywnosci": x.get("numActivitiesLinked"),
+            "czas_h": _r((x.get("durationUsedSeconds") or 0) / 3600, 1) if x.get("durationUsedSeconds") is not None else None,
+            "od": x.get("firstUseDate"), "dni_uzycia": x.get("daysUsed"), "uuid": x.get("uuid"),
+        })
+    return wynik
+
+
+# typId rekordu -> (sport, opis, jednostka wartości: s = czas, m = dystans, W, kroki, dni)
+TYPY_REKORDOW = {
+    1: ("bieg", "1 km", "s"), 2: ("bieg", "1 mila", "s"), 3: ("bieg", "5 km", "s"), 4: ("bieg", "10 km", "s"),
+    5: ("bieg", "półmaraton", "s"), 6: ("bieg", "maraton", "s"), 7: ("bieg", "najdłuższy bieg", "m"),
+    8: ("rower", "najdłuższa jazda", "m"), 9: ("rower", "największe przewyższenie", "m"),
+    10: ("rower", "najwyższa moc 20 min", "W"), 11: ("rower", "40 km", "s"),
+    12: ("kroki", "najwięcej kroków w dniu", "kroki"), 13: ("kroki", "najwięcej kroków w tygodniu", "kroki"),
+    14: ("kroki", "najwięcej kroków w miesiącu", "kroki"), 15: ("kroki", "najdłuższa seria celu kroków", "dni"),
+    16: ("kroki", "obecna seria celu kroków", "dni"),
+    17: ("plywanie", "najdłuższe pływanie", "m"), 18: ("plywanie", "100 m", "s"), 19: ("plywanie", "100 jardów", "s"),
+    20: ("plywanie", "400 m", "s"), 21: ("plywanie", "500 jardów", "s"), 22: ("plywanie", "750 m", "s"),
+    23: ("plywanie", "1000 m", "s"), 24: ("plywanie", "1500 m", "s"), 25: ("plywanie", "1650 jardów", "s"),
+}
+DYSTANS_REKORDU_M = {1: 1000, 2: 1609.34, 3: 5000, 4: 10000, 5: 21097.5, 6: 42195, 11: 40000,
+                     18: 100, 20: 400, 22: 750, 23: 1000, 24: 1500}
+
+
+def rekordy(klient, sport: str | None = None) -> list[dict]:
+    """Rekordy osobiste z Garmin Connect (bieg, rower, pływanie, kroki)."""
+    wynik = []
+    for x in klient.get_personal_record() or []:
+        typ = x.get("typeId")
+        sp, opis, jedn = TYPY_REKORDOW.get(typ, (x.get("activityType") or "inne", f"typ {typ}", None))
+        if sport and sp != sport:
+            continue
+        v = x.get("value")
+        w = {"sport": sp, "rekord": opis, "data": (x.get("actStartDateTimeInGMTFormatted") or "")[:10] or None,
+             "aktywnosc": x.get("activityName"), "activity_id": x.get("activityId")}
+        if jedn == "s":
+            w["czas"] = _czas_hms(v)
+            dyst = DYSTANS_REKORDU_M.get(typ)
+            if dyst and v:
+                if sp == "plywanie":
+                    w["tempo_100m"] = _tempo_100m(dyst / v)
+                elif sp == "bieg":
+                    w["tempo_min_km"] = _tempo_km(dyst / v)
+                else:
+                    w["predkosc_kmh"] = _r(dyst / v * 3.6, 1)
+        elif jedn == "m":
+            w["dystans_km"] = _r(v / 1000, 2) if v is not None else None
+        elif jedn == "W":
+            w["moc_w"] = _r(v, 0)
+        else:
+            w[jedn or "wartosc"] = _r(v, 0)
+        wynik.append(w)
+    wynik.sort(key=lambda r: (["bieg", "rower", "plywanie", "kroki"].index(r["sport"])
+                              if r["sport"] in ("bieg", "rower", "plywanie", "kroki") else 9))
+    return wynik
+
+
+DYSTANSE_PROGNOZ = (("5 km", "time5K", 5000), ("10 km", "time10K", 10000),
+                    ("półmaraton", "timeHalfMarathon", 21097.5), ("maraton", "timeMarathon", 42195))
+
+
+def _prognoza(x: dict) -> dict:
+    w = {"data": x.get("calendarDate")}
+    for nazwa, klucz, dyst in DYSTANSE_PROGNOZ:
+        t = x.get(klucz)
+        w[nazwa] = {"czas": _czas_hms(t), "tempo_min_km": _tempo_km(dyst / t) if t else None}
+    return w
+
+
+def prognozy(klient, od=None, do=None) -> dict:
+    """Prognozy czasów startowych Garmina (5 km, 10 km, półmaraton, maraton): aktualne i opcjonalnie miesięczne."""
+    wynik = {"aktualne": _prognoza(klient.get_race_predictions() or {}),
+             "uwaga": "Prognozy Garmina (z VO2max i historii biegów) - szacunek, nie wynik."}
+    if od or do:
+        poczatek, koniec = zakres(od, do, 180, 366)
+        hist = klient.get_race_predictions(poczatek.isoformat(), koniec.isoformat(), "monthly") or []
+        wynik["miesiecznie"] = [_prognoza(x) for x in hist]
+    return wynik
+
+
 # ----------------------------------------------------------------- surowe odpowiedzi (diagnostyka)
 
 ZRODLA_SUROWE = {
