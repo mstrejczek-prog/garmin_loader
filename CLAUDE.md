@@ -71,7 +71,7 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 - [x] Specyfikacja 2026-11-23, P1: `serie`, `plan_treningu`, `plan_vs_wykonanie`, `pobierz_fit` (wdrożone, testy akceptacyjne OK).
 - [x] `ingest_fit.py` (repo FIT_ANALYZER, prywatne): tabele `sets`, `lengths`, `workout_steps`, `--uzupelnij`,
       `progi_zmierzone` + widok `sessions_progi` (2026-11-23).
-- [x] Dysk Google dla `pobierz_fit` (kod gotowy; wymaga klienta OAuth od właściciela).
+- [x] Dysk Google dla `pobierz_fit`: połączony i sprawdzony 2026-11-23 (aplikacja OAuth opublikowana, „In production”).
 - [ ] Specyfikacja 2026-11-23: P2, P3.
 - [ ] Etap 2: `analiza_treningu` z pliku FIT (NP, TSS, IF, decoupling, krzywa mocy – kod w
       FIT_ANALYZER `ingest_fit.py`) i `obciazenie` (CTL/ATL/TSB).
