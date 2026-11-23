@@ -261,6 +261,11 @@ def trening(klient, activity_id, dlugosci: bool = False) -> dict:
     try:
         laps = (klient.get_activity_splits(aid) or {}).get("lapDTOs") or []
         wynik["okrazenia"] = [_okrazenie(l, sport) for l in laps[:60]]
+        if plyw and wynik["plywanie"] is not None:
+            # tempo pływania bez przerw: suma czasu i dystansu samych długości basenu
+            dl = [x for l in laps for x in (l.get("lengthDTOs") or []) if x.get("distance") and x.get("duration")]
+            if dl:
+                wynik["plywanie"]["tempo_100m"] = _tempo_100m(sum(x["distance"] for x in dl) / sum(x["duration"] for x in dl))
         if plyw and dlugosci:
             wynik["dlugosci"] = [_dlugosc(x) for l in laps for x in (l.get("lengthDTOs") or [])][:200]
     except Exception as e:  # noqa: BLE001 - brak okrążeń nie przekreśla reszty
