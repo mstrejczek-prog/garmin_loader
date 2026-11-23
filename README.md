@@ -112,7 +112,8 @@ i desktop). Wtedy w zwykłej rozmowie Claude sam:
 | `trening` | `activity_id`, `surowe` | szczegóły aktywności: podsumowanie, okrążenia, czas w strefach HR |
 | `serie` | `activity_id` | serie siłowe (ćwiczenie, powtórzenia, `ciezar_kg`, `czas_s`, `krok_planu`) + podsumowanie per ćwiczenie i tonaż |
 | `plan_vs_wykonanie` | `activity_id` | plan z kalendarza vs wykonanie: siła per krok (serie, powtórzenia, ciężar), wytrzymałość per okrążenie (czas, dystans, HR, moc, tempo vs cel), flaga `odchylenie` |
-| `pobierz_fit` | `activity_id` albo `od`, `do`, `sport` (do 20) | linki (ważne 1 h) do oryginalnych plików FIT |
+| `pobierz_fit` | `activity_id` albo `od`, `do`, `sport` (do 20), `cel` (`dysk`/`link`) | oryginalne pliki FIT: na Dysk Google (gdy połączony) albo linki ważne 1 h |
+| `polacz_dysk_google` | - | link do jednorazowego połączenia Dysku Google i stan połączenia |
 | `wellness` | `od`, `do` (do 14 dni) | sen, HRV, tętno spoczynkowe, Body Battery, stres |
 | `gotowosc` | `data` | Training Readiness, Training Status, ACWR, VO2max |
 | `surowe_dane` | `zrodlo`, `id` | diagnostyka: surowa odpowiedź Garmina (do ~30 kB) |
@@ -146,10 +147,36 @@ krokami planu przez `wktStepIndex` (konektor sprawdza dwie konwencje numeracji i
 zgadzają się kategorie ćwiczeń); w wytrzymałości kroki planu są łączone z okrążeniami po kolejności.
 Aktywność bez `associatedWorkoutId` dostaje komunikat zamiast błędu.
 
-**Pliki FIT**: serwer działa zdalnie (Render), więc nie zapisuje plików na Twój dysk i nie zasila
-`treningi.duckdb`. `pobierz_fit` zwraca podpisane linki (`/fit/<token>`, ważne godzinę) - otwierasz je w
+**Pliki FIT**: serwer działa zdalnie (Render), więc nie zapisuje plików na Twój dysk lokalny i nie zasila
+`treningi.duckdb`. Gdy Dysk Google jest połączony (niżej), pliki trafiają na Dysk; inaczej `pobierz_fit` zwraca podpisane linki (`/fit/<token>`, ważne godzinę) - otwierasz je w
 przeglądarce, zapisujesz zip (`<activity_id>_ACTIVITY.zip` z plikiem `<activity_id>_ACTIVITY.fit`) i
 uruchamiasz lokalnie `python ingest_fit.py treningi.duckdb <pliki>`.
+
+### Dysk Google (pliki FIT)
+
+`pobierz_fit` może wgrywać oryginalne pliki FIT prosto na Twój Dysk Google, do folderu
+**„Dane treningowe/FIT (surowe pliki z Garmina)”** (zmienisz to zmienną `DYSK_FOLDER`). Pliki o tej samej
+nazwie nie są dublowane. Jeśli masz „Dysk Google na komputer”, folder synchronizuje się lokalnie i wystarczy
+uruchomić `python ingest_fit.py treningi.duckdb "<ten folder>"`.
+
+Konektor używa zakresu **`drive.file`**: widzi tylko pliki i foldery, które sam utworzył (nie ma dostępu do
+reszty Dysku). Dlatego folder zakłada sam - jeśli masz już folder o tej nazwie, obok powstanie drugi.
+
+Jednorazowa konfiguracja (ok. 10 minut):
+
+1. https://console.cloud.google.com → nowy projekt (np. „Garmin Plan Loader”).
+2. **APIs & Services → Library → Google Drive API → Enable**.
+3. **Google Auth Platform → Branding / Audience**: typ **External**, nazwa aplikacji, Twój e-mail;
+   w **Data access** dodaj zakres `.../auth/drive.file`; w **Audience** kliknij **Publish app**
+   (w trybie „Testing” Google unieważnia token po 7 dniach; `drive.file` nie wymaga weryfikacji Google).
+4. **Clients → Create client → Web application**, w **Authorized redirect URIs** wpisz
+   `https://garmin-plan-loader.onrender.com/google/powrot`. Skopiuj **Client ID** i **Client secret**.
+5. Render → serwis → **Environment**: dodaj `GOOGLE_CLIENT_ID` i `GOOGLE_CLIENT_SECRET`, zapisz z wdrożeniem.
+6. W czacie poproś Claude: *„połącz Dysk Google”* - narzędzie `polacz_dysk_google` da link (ważny 30 min).
+   Zaloguj się do Google, zaakceptuj (Google może ostrzec, że aplikacja nie jest zweryfikowana -
+   „Zaawansowane → Przejdź do…”, to Twoja własna aplikacja). Strona pokaże wartość **`GOOGLE_TOKEN`**.
+7. Wpisz `GOOGLE_TOKEN` w Render → Environment i zapisz z wdrożeniem. Od teraz `pobierz_fit` domyślnie
+   wgrywa na Dysk (`cel="link"` nadal daje linki do pobrania).
 
 ### Jak podłączyć
 
@@ -202,6 +229,9 @@ Działa też na każdym hostingu z `Procfile` (Railway, Heroku, Fly.io…). Zmie
 | `MCP_TOKEN` | Hasło connectora dla Claude (`/mcp`). Bez niego connector jest wyłączony. |
 | `GARMIN_TOKEN` | Zaszyfrowany token Garmina dla connectora (przycisk „Connector dla Claude”). |
 | `USTAWIENIA` | Opcjonalnie strefy i FTP dla connectora (ten sam przycisk). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Klient OAuth Google (Dysk Google dla plików FIT). |
+| `GOOGLE_TOKEN` | Zaszyfrowany token Dysku Google (strona po `polacz_dysk_google`). |
+| `DYSK_FOLDER` | Opcjonalnie folder na Dysku (domyślnie „Dane treningowe/FIT (surowe pliki z Garmina)”). |
 
 Uwagi:
 

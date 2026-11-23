@@ -19,7 +19,8 @@ treningi, wysyłać je na zegarek i analizować dane.
 | `serie` | serie siłowe: ćwiczenie, powtórzenia, ciężar (kg), tonaż per ćwiczenie |
 | `plan_treningu` | kroki zaplanowanego treningu (`workout_id` z `kalendarz`) |
 | `plan_vs_wykonanie` | plan vs wykonanie dla aktywności zrobionej z kalendarza, z flagą odchylenia |
-| `pobierz_fit` | linki (1 h) do oryginalnych plików FIT – pokaż je użytkownikowi |
+| `pobierz_fit` | oryginalne pliki FIT: na Dysk Google (folder „Dane treningowe/FIT…”) albo linki (1 h) |
+| `polacz_dysk_google` | link do jednorazowego połączenia Dysku Google |
 | `surowe_dane` | surowa odpowiedź Garmina, gdy zwięzłe narzędzia czegoś nie pokazują |
 | `wellness` | regeneracja dzień po dniu (do 14 dni): sen i fazy, sleep score, HRV, tętno spoczynkowe, Body Battery, stres |
 | `gotowosc` | Training Readiness, Training Status (obciążenie ostre/przewlekłe, ACWR, bilans 4 tygodni), VO2max |

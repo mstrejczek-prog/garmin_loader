@@ -23,8 +23,11 @@ import os
 import threading
 from typing import Any, Callable
 
-from flask import Blueprint, Response, jsonify, request, url_for
+from html import escape
 
+from flask import Blueprint, Response, jsonify, redirect, request, url_for
+
+import dysk_google
 import garmin_dane
 import garmin_io
 import plan
@@ -213,8 +216,27 @@ def t_surowe_dane(a: dict) -> Any:
     return _z_garminem(lambda k: garmin_dane.surowe(k, str(a.get("zrodlo") or ""), a.get("id")))
 
 
+def _refresh_google() -> str | None:
+    surowy = os.environ.get("GOOGLE_TOKEN", "").strip()
+    if not surowy or not dysk_google.ma_klienta():
+        return None
+    return _odszyfruj("google", surowy) if _odszyfruj else None
+
+
+def _pobierz_fit_bajty(aid: str) -> bytes:
+    from garminconnect import Garmin
+    dane = _z_garminem(lambda k: k.download_activity(aid, dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL))
+    if not isinstance(dane, (bytes, bytearray)) or not dane:
+        raise BladNarzedzia(f"Garmin nie zwrócił pliku aktywności {aid}")
+    return bytes(dane)
+
+
+def _nazwa_fit(aid: str, dane: bytes) -> str:
+    return f"{aid}_ACTIVITY.zip" if dane[:2] == b"PK" else f"{aid}_ACTIVITY.fit"
+
+
 def t_pobierz_fit(a: dict) -> dict:
-    """Linki do oryginalnych plików FIT (serwer działa zdalnie - nie ma dostępu do dysku użytkownika)."""
+    """Oryginalne pliki FIT: na Dysk Google (gdy połączony) albo jako linki do pobrania."""
     if _szyfruj is None:
         raise BladNarzedzia("Serwer nie obsługuje pobierania plików")
     if a.get("activity_id"):
@@ -229,21 +251,59 @@ def t_pobierz_fit(a: dict) -> dict:
                                 "zawęź zakres dat albo sport")
         ids = [str(x["id"]) for x in lista]
         opisy = {str(x["id"]): f"{x.get('start', '')[:10]} {x.get('nazwa') or ''}".strip() for x in lista}
-    baza = request.url_root.rstrip("/")
-    pliki = [{"activity_id": int(i), "opis": opisy.get(i), "plik": f"{i}_ACTIVITY.zip",
-              "link": baza + url_for("mcp.pobierz_plik_fit", token=_szyfruj("fit", i))} for i in ids]
-    wynik = {
-        "pliki": pliki,
-        "wazne_minut": CZAS_LINKU_FIT // 60,
-        "jak_uzyc": ("Pokaż użytkownikowi linki - otwarte w przeglądarce pobierają zip z oryginalnym plikiem FIT "
-                     "(nazwa <activity_id>_ACTIVITY.fit, zgodna z ingest_fit.py). Zapisz je w folderze "
-                     "„Dane treningowe/FIT (surowe pliki z Garmina)” i uruchom lokalnie: "
-                     "python ingest_fit.py treningi.duckdb <pobrane pliki .zip>"),
-    }
+
+    refresh = _refresh_google()
+    cel = a.get("cel") or ("dysk" if refresh else "link")
+    if cel == "dysk" and not refresh:
+        raise BladNarzedzia("Dysk Google nie jest połączony - użyj narzędzia polacz_dysk_google "
+                            "albo wywołaj pobierz_fit z cel=\"link\".")
+
+    if cel == "dysk":
+        pliki = []
+        for i in ids:
+            try:
+                dane = _pobierz_fit_bajty(i)
+                w = dysk_google.wyslij(refresh, _nazwa_fit(i, dane), dane)
+            except (BladNarzedzia, dysk_google.BladDysku) as e:
+                w = {"nazwa": f"{i}_ACTIVITY.zip", "status": "blad", "blad": str(e)}
+            pliki.append({"activity_id": int(i), "opis": opisy.get(i), **w})
+        wynik = {"cel": "dysk", "folder": dysk_google.folder(), "pliki": pliki,
+                 "jak_uzyc": ("Pliki są na Dysku Google w podanym folderze (pliki o tej samej nazwie nie są "
+                              "dublowane). Jeśli Dysk jest zsynchronizowany z komputerem (Dysk Google na komputer), "
+                              "uruchom lokalnie: python ingest_fit.py treningi.duckdb \"<folder na dysku>\"")}
+    else:
+        baza = request.url_root.rstrip("/")
+        pliki = [{"activity_id": int(i), "opis": opisy.get(i), "plik": f"{i}_ACTIVITY.zip",
+                  "link": baza + url_for("mcp.pobierz_plik_fit", token=_szyfruj("fit", i))} for i in ids]
+        wynik = {
+            "cel": "link", "pliki": pliki, "wazne_minut": CZAS_LINKU_FIT // 60,
+            "jak_uzyc": ("Pokaż użytkownikowi linki - otwarte w przeglądarce pobierają zip z oryginalnym plikiem FIT "
+                         "(nazwa <activity_id>_ACTIVITY.fit, zgodna z ingest_fit.py). Zapisz je w folderze "
+                         "„Dane treningowe/FIT (surowe pliki z Garmina)” i uruchom lokalnie: "
+                         "python ingest_fit.py treningi.duckdb <pobrane pliki .zip>"),
+        }
     if a.get("zasil_baze"):
-        wynik["zasil_baze"] = ("Niewykonane: serwer konektora działa zdalnie (Render) i nie ma dostępu do dysku "
-                               "ani do treningi.duckdb. Uruchom ingest_fit.py lokalnie na pobranych plikach.")
+        wynik["zasil_baze"] = ("Niewykonane: serwer konektora działa zdalnie (Render) i nie ma dostępu do "
+                               "treningi.duckdb. Uruchom ingest_fit.py lokalnie na plikach z Dysku/linków.")
     return wynik
+
+
+def t_polacz_dysk_google(a: dict) -> dict:
+    if not dysk_google.ma_klienta():
+        raise BladNarzedzia(
+            "Brak klienta OAuth Google na serwerze. Właściciel musi raz: (1) w Google Cloud Console utworzyć "
+            "projekt i włączyć Google Drive API, (2) skonfigurować ekran zgody OAuth (typ zewnętrzny, zakres "
+            "drive.file, opublikować aplikację), (3) utworzyć identyfikator klienta OAuth typu „Aplikacja "
+            f"internetowa” z URI przekierowania {request.url_root.rstrip('/')}/google/powrot, (4) wpisać "
+            "GOOGLE_CLIENT_ID i GOOGLE_CLIENT_SECRET w zmiennych serwera na Render. Szczegóły: README, „Dysk Google”.")
+    link = request.url_root.rstrip("/") + url_for("mcp.google_polacz", token=_szyfruj("google_start", "1"))
+    return {
+        "polaczony": bool(_refresh_google()),
+        "link": link, "wazny_minut": 30,
+        "jak_uzyc": ("Pokaż użytkownikowi link. Po zalogowaniu do Google i zgodzie strona pokaże wartość "
+                     "GOOGLE_TOKEN - użytkownik wpisuje ją w zmiennych serwera na Render (Environment). "
+                     f"Pliki FIT trafią do folderu „{dysk_google.folder()}” na jego Dysku."),
+    }
 
 
 _DATA = {"type": "string", "description": "RRRR-MM-DD"}
@@ -348,13 +408,20 @@ NARZEDZIA: dict[str, dict] = {
             "activity_id": {"type": ["string", "integer"]}}, "required": ["activity_id"]},
     },
     "pobierz_fit": {
-        "fn": t_pobierz_fit, "ro": True,
-        "opis": "Linki (ważne 1 h) do oryginalnych plików FIT aktywności - jednej (activity_id) albo z okresu "
-                "(od, do, opcjonalnie sport; najwyżej 20). Serwer działa zdalnie, więc nie zapisuje na dysk "
-                "użytkownika ani nie zasila treningi.duckdb - pokaż linki użytkownikowi.",
+        "fn": t_pobierz_fit, "ro": False, "destrukcyjne": False,
+        "opis": "Oryginalne pliki FIT aktywności - jednej (activity_id) albo z okresu (od, do, opcjonalnie sport; "
+                "najwyżej 20). cel=\"dysk\" (domyślnie, gdy Dysk Google połączony): wgrywa do folderu na Dysku "
+                "Google (bez dublowania); cel=\"link\": linki do pobrania ważne 1 h. Serwer działa zdalnie, "
+                "więc nie zasila treningi.duckdb.",
         "schema": {"type": "object", "properties": {
             "activity_id": {"type": ["string", "integer"]}, "od": _DATA, "do": _DATA,
-            "sport": {"type": "string"}, "zasil_baze": {"type": "boolean"}}},
+            "sport": {"type": "string"}, "cel": {"type": "string", "enum": ["dysk", "link"]},
+            "zasil_baze": {"type": "boolean"}}},
+    },
+    "polacz_dysk_google": {
+        "fn": t_polacz_dysk_google, "ro": True,
+        "opis": "Link do jednorazowego połączenia Dysku Google (zapis plików FIT przez pobierz_fit) i stan połączenia.",
+        "schema": {"type": "object", "properties": {}},
     },
     "surowe_dane": {
         "fn": t_surowe_dane, "ro": True,
@@ -487,6 +554,45 @@ def pobierz_plik_fit(token):
     nazwa = f"{aid}_ACTIVITY.zip" if zip_ else f"{aid}_ACTIVITY.fit"
     return Response(bytes(dane), mimetype="application/zip" if zip_ else "application/octet-stream",
                     headers={"Content-Disposition": f'attachment; filename="{nazwa}"', "Cache-Control": "no-store"})
+
+
+def _strona(tytul: str, tresc_html: str, status: int = 200) -> Response:
+    html = (f"<!doctype html><html lang=\"pl\"><head><meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{escape(tytul)}</title>"
+            f"</head><body><h1>{escape(tytul)}</h1>{tresc_html}</body></html>")
+    return Response(html, status=status, mimetype="text/html", headers={"Cache-Control": "no-store"})
+
+
+def _powrot_google() -> str:
+    return request.url_root.rstrip("/") + url_for("mcp.google_powrot")
+
+
+@bp.route("/google/polacz/<token>", methods=["GET"])
+def google_polacz(token):
+    if not (_odszyfruj and _odszyfruj("google_start", token, ttl=30 * 60)):
+        return _strona("Link wygasł", "<p>Poproś Claude o nowy link (narzędzie polacz_dysk_google).</p>", 403)
+    if not dysk_google.ma_klienta():
+        return _strona("Brak konfiguracji", "<p>Na serwerze brakuje GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.</p>", 503)
+    return redirect(dysk_google.adres_logowania(_powrot_google(), _szyfruj("google_state", "1")))
+
+
+@bp.route("/google/powrot", methods=["GET"])
+def google_powrot():
+    if not (_odszyfruj and _odszyfruj("google_state", request.args.get("state", ""), ttl=15 * 60)):
+        return _strona("Logowanie nieważne", "<p>Zacznij od nowa linkiem od Claude.</p>", 403)
+    if request.args.get("error"):
+        return _strona("Nie połączono", f"<p>Google: {escape(request.args['error'])}</p>", 400)
+    try:
+        refresh = dysk_google.wymien_kod(request.args.get("code", ""), _powrot_google())
+    except dysk_google.BladDysku as e:
+        return _strona("Nie połączono", f"<p>{escape(str(e))}</p>", 502)
+    wartosc = _szyfruj("google", refresh)
+    return _strona("Dysk Google połączony", (
+        "<p>Ostatni krok: w Render → garmin-plan-loader → <b>Environment</b> dodaj zmienną "
+        "<code>GOOGLE_TOKEN</code> o wartości poniżej (zaszyfrowana kluczem serwera; nie pokazuj jej nikomu) "
+        "i zapisz z ponownym wdrożeniem.</p>"
+        f"<p><textarea readonly rows=\"6\" cols=\"80\">{escape(wartosc)}</textarea></p>"
+        f"<p>Pliki FIT trafią do folderu „{escape(dysk_google.folder())}” na Twoim Dysku.</p>"))
 
 
 def zarejestruj(app, odszyfruj, szyfruj=None) -> None:
