@@ -322,7 +322,10 @@ def t_stan_dysku(a: dict) -> dict:
             po_id.setdefault(f["activity_id"], []).append(f)
     duplikaty = [{"activity_id": int(k), "pliki": [{x: f[x] for x in ("nazwa", "rozmiar_b", "utworzony", "id")}
                                                    for f in v],
-                  "identyczne": len({f["md5"] for f in v}) == 1 and v[0]["md5"] is not None}
+                  "identyczne": len({f["md5"] for f in v}) == 1 and v[0]["md5"] is not None,
+                  # zip pobrany z Garmina dwa razy ma inną sumę kontrolną (inne znaczniki czasu w archiwum),
+                  # ale ten sam rozmiar - to zwykle ta sama treść
+                  "ten_sam_rozmiar": len({f["rozmiar_b"] for f in v}) == 1}
                  for k, v in sorted(po_id.items()) if len(v) > 1]
     po_md5: dict[str, list] = {}
     for f in pliki:

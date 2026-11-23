@@ -165,6 +165,7 @@ class TestDysk(BazaMcp):
                                              "pliki_bez_numeru_aktywnosci": 1})
         self.assertEqual(d["duplikaty"][0]["activity_id"], 24644475709)
         self.assertTrue(d["duplikaty"][0]["identyczne"])
+        self.assertTrue(d["duplikaty"][0]["ten_sam_rozmiar"])
         self.assertEqual(d["pliki_bez_numeru_aktywnosci"], ["notatka.txt"])
         self.assertEqual([b["activity_id"] for b in d["brakujace"]], [25200000001])
         self.assertNotIn("uzupelniono", d)
