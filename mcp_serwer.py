@@ -559,7 +559,8 @@ NARZEDZIA: dict[str, dict] = {
                                                      if k != "szczegoly_strumienie")
                 + ". Używaj, gdy zwięzłe narzędzia czegoś nie pokazują.",
         "schema": {"type": "object", "properties": {
-            "zrodlo": {"type": "string", "enum": list(garmin_dane.ZRODLA_SUROWE) + list(garmin_dane.ZRODLA_SUROWE_ZAKRES)},
+            "zrodlo": {"type": "string", "enum": list(garmin_dane.ZRODLA_SUROWE) + list(garmin_dane.ZRODLA_SUROWE_ZAKRES)
+                       + list(garmin_dane.ZRODLA_SUROWE_BEZ_ID) + ["sprzet_statystyki", "prognozy_miesieczne"]},
             "id": {"type": ["string", "integer"], "description": "activity_id albo workout_id"},
             "od": _DATA, "do": _DATA},
             "required": ["zrodlo"]},

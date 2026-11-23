@@ -1066,7 +1066,21 @@ ZRODLA_SUROWE_ZAKRES = {
 }
 
 
+ZRODLA_SUROWE_BEZ_ID = {
+    "sprzet_lista": lambda k: k.get_gear_list(0, 100),
+    "rekordy": lambda k: k.get_personal_record(),
+    "prognozy": lambda k: k.get_race_predictions(),
+}
+
+
 def surowe(klient, zrodlo: str, ident=None, od=None, do=None) -> Any:
+    if zrodlo in ZRODLA_SUROWE_BEZ_ID:
+        return przytnij(ZRODLA_SUROWE_BEZ_ID[zrodlo](klient), 30000)
+    if zrodlo == "sprzet_statystyki":
+        return przytnij(klient.get_gear_stats(str(ident or "").strip()), 30000)
+    if zrodlo == "prognozy_miesieczne":
+        poczatek, koniec = zakres(od, do, 180, 366)
+        return przytnij(klient.get_race_predictions(poczatek.isoformat(), koniec.isoformat(), "monthly"), 30000)
     if zrodlo == "szczegoly_strumienie":
         return przytnij(klient.get_activity_details(_id(ident, "activity_id"), maxchart=20, maxpoly=0), 30000)
     if zrodlo in ZRODLA_SUROWE_ZAKRES:
