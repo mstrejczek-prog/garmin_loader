@@ -61,8 +61,8 @@ def folder() -> str:
 
 
 def id_aktywnosci(nazwa: str) -> str | None:
-    """Numer aktywności Garmina z nazwy pliku: 24644475709.zip, 24644475709_ACTIVITY.fit -> 24644475709."""
-    m = re.match(r"^(\d{6,})(?:[_.\-]|$)", nazwa or "")
+    """Numer aktywności Garmina z nazwy pliku: 24644475709.zip, 24644475709_ACTIVITY.fit, 24644475709 (2).zip."""
+    m = re.match(r"^(\d{6,})(?:[ _.\-(]|$)", nazwa or "")     # też kopie „123 (2).zip”
     return m.group(1) if m else None
 
 

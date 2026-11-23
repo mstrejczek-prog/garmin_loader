@@ -187,6 +187,12 @@ class TestDysk(BazaMcp):
         self.assertEqual((p["status"], p["nazwa"]), ("juz_byl", "25167772241.zip"))
         self.assertEqual(self.g.uploady, 0)
 
+    def test_numer_aktywnosci_z_nazwy(self):
+        for nazwa, oczekiwane in [("24644475709.zip", "24644475709"), ("24644475709_ACTIVITY.fit", "24644475709"),
+                                  ("23272967148 (2).zip", "23272967148"), ("23272967148(1).zip", "23272967148"),
+                                  ("2026-11-23 notatki.txt", None), ("notatka.txt", None), ("123.zip", None)]:
+            self.assertEqual(dysk_google.id_aktywnosci(nazwa), oczekiwane, nazwa)
+
     def test_brak_klienta(self):
         os.environ.pop("GOOGLE_CLIENT_ID")
         w, tekst = self.narzedzie("polacz_dysk_google")
