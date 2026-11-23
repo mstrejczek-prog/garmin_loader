@@ -11,7 +11,7 @@ Wcześniejszy projekt FIT_ANALYZER (analiza FIT + czat) jest przenoszony tutaj i
 | `web.py` | Flask: strona, API `/api/*` (logowanie, MFA, podgląd, wysyłka), rejestruje MCP |
 | `mcp_serwer.py` | Serwer MCP `POST /mcp` (Streamable HTTP, bezstanowy, odpowiedzi JSON), narzędzia, autoryzacja |
 | `garmin_dane.py` | Odczyt danych z Garmina → zwięzłe, defensywne podsumowania (brak pola = None, nie błąd) |
-| `dysk_google.py` | Zapis FIT na Dysk Google (OAuth, zakres `drive.file`, upload multipart, bez dublowania) |
+| `dysk_google.py` | FIT na Dysku Google (OAuth, zakres `drive`; lista folderu, upload multipart, bez dublowania po numerze aktywności; nic nie kasuje) |
 | `garmin_io.py` | Logowanie (hasło/MFA/token) i idempotentna wysyłka planów + kalendarz |
 | `plan.py` | Format planu (JSON po polsku) → JSON treningu Garmin, podgląd, prompt dla AI |
 | `ustawienia.py` | Strefy tętna (S1–S5), mocy (P1–P5), FTP |
@@ -28,7 +28,8 @@ Cały dostęp do Garmina idzie **jedną nieoficjalną biblioteką `garminconnect
 `format_planu`, `moje_ustawienia`, `sprawdz_plan`, `wyslij_plan`, `kalendarz`, `usun_z_kalendarza`,
 `plan_treningu`, `aktywnosci`, `trening`, `serie`, `plan_vs_wykonanie`, `pobierz_fit` (Dysk Google albo
 podpisane linki `/fit/<token>`, 1 h), `polacz_dysk_google` (link → `/google/polacz/<token>` → Google →
-`/google/powrot` pokazuje zaszyfrowany `GOOGLE_TOKEN` do wpisania w Render), `wellness`, `gotowosc`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
+`/google/powrot` pokazuje zaszyfrowany `GOOGLE_TOKEN` do wpisania w Render), `stan_dysku` (duplikaty, braki
+vs Garmin, `uzupelnij`), `wellness`, `gotowosc`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
 akceptacja użytkownika → `wyslij_plan`. Błędy narzędzi zwracamy jako `isError` z polskim komunikatem.
 Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests/test_mcp.py`.
 
@@ -45,7 +46,9 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
   - `GARMIN_TOKEN` – zaszyfrowany token Garmina (strona → „Connector dla Claude”),
   - `USTAWIENIA` – opcjonalnie strefy/FTP (JSON w formacie `ustawienia.py`),
   - `KOD_DOSTEPU` – opcjonalny kod do strony,
-  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN`, `DYSK_FOLDER` – Dysk Google dla FIT.
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN`, `DYSK_FOLDER_ID` / `DYSK_FOLDER`, `DYSK_ZAKRES` –
+    Dysk Google dla FIT. Folder docelowy właściciela: „Obsidian Vault/Dane treningowe/FIT (surowe pliki z Garmina)”
+    (ID w `DYSK_FOLDER_ID` na Render); pliki tam mają nazwy `<activity_id>.zip`.
 - Connector w claude.ai: URL `.../mcp`, **Authentication: „No sign-in”** + nagłówek `Authorization`.
   claude.ai domyślnie proponuje OAuth („Sign in now”), bo `/mcp` bez tokenu zwraca 401 – trzeba to zmienić.
 - Środowisko Claude Code ma dopuszczony host `garmin-plan-loader.onrender.com` (od 2026-11-23): narzędzia

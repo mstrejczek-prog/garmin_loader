@@ -232,7 +232,26 @@ def _pobierz_fit_bajty(aid: str) -> bytes:
 
 
 def _nazwa_fit(aid: str, dane: bytes) -> str:
-    return f"{aid}_ACTIVITY.zip" if dane[:2] == b"PK" else f"{aid}_ACTIVITY.fit"
+    # jak eksport z Garmin Connect w folderze użytkownika: <activity_id>.zip (w środku <id>_ACTIVITY.fit)
+    return f"{aid}.zip" if dane[:2] == b"PK" else f"{aid}_ACTIVITY.fit"
+
+
+def _wgraj_na_dysk(refresh: str, ids: list[str], opisy: dict, istniejace: list[dict]) -> list[dict]:
+    wyniki = []
+    for i in ids:
+        try:
+            juz = next((f for f in istniejace if f.get("activity_id") == i), None)
+            if juz:
+                w = {"nazwa": juz["nazwa"], "status": "juz_byl", "id": juz["id"], "link": juz.get("link")}
+            else:
+                dane = _pobierz_fit_bajty(i)
+                w = dysk_google.wyslij(refresh, _nazwa_fit(i, dane), dane, istniejace=istniejace)
+                if w["status"] == "wgrany":
+                    istniejace.append({"nazwa": w["nazwa"], "id": w["id"], "activity_id": i, "link": w.get("link")})
+        except (BladNarzedzia, dysk_google.BladDysku) as e:
+            w = {"nazwa": f"{i}.zip", "status": "blad", "blad": str(e)}
+        wyniki.append({"activity_id": int(i), "opis": opisy.get(i), **w})
+    return wyniki
 
 
 def t_pobierz_fit(a: dict) -> dict:
@@ -259,15 +278,13 @@ def t_pobierz_fit(a: dict) -> dict:
                             "albo wywołaj pobierz_fit z cel=\"link\".")
 
     if cel == "dysk":
-        pliki = []
-        for i in ids:
-            try:
-                dane = _pobierz_fit_bajty(i)
-                w = dysk_google.wyslij(refresh, _nazwa_fit(i, dane), dane)
-            except (BladNarzedzia, dysk_google.BladDysku) as e:
-                w = {"nazwa": f"{i}_ACTIVITY.zip", "status": "blad", "blad": str(e)}
-            pliki.append({"activity_id": int(i), "opis": opisy.get(i), **w})
-        wynik = {"cel": "dysk", "folder": dysk_google.folder(), "pliki": pliki,
+        try:
+            istniejace = dysk_google.lista_plikow(refresh)
+            folder = dysk_google.opis_folderu(refresh)
+        except dysk_google.BladDysku as e:
+            raise BladNarzedzia(str(e)) from e
+        pliki = _wgraj_na_dysk(refresh, ids, opisy, istniejace)
+        wynik = {"cel": "dysk", "folder": folder, "pliki": pliki,
                  "jak_uzyc": ("Pliki są na Dysku Google w podanym folderze (pliki o tej samej nazwie nie są "
                               "dublowane). Jeśli Dysk jest zsynchronizowany z komputerem (Dysk Google na komputer), "
                               "uruchom lokalnie: python ingest_fit.py treningi.duckdb \"<folder na dysku>\"")}
@@ -288,12 +305,65 @@ def t_pobierz_fit(a: dict) -> dict:
     return wynik
 
 
+def t_stan_dysku(a: dict) -> dict:
+    """Pliki FIT w folderze na Dysku: duplikaty, braki względem aktywności z Garmina, opcjonalne uzupełnienie."""
+    refresh = _refresh_google()
+    if not refresh:
+        raise BladNarzedzia("Dysk Google nie jest połączony - użyj narzędzia polacz_dysk_google.")
+    try:
+        pliki = dysk_google.lista_plikow(refresh)
+        folder = dysk_google.opis_folderu(refresh)
+    except dysk_google.BladDysku as e:
+        raise BladNarzedzia(str(e)) from e
+
+    po_id: dict[str, list] = {}
+    for f in pliki:
+        if f["activity_id"]:
+            po_id.setdefault(f["activity_id"], []).append(f)
+    duplikaty = [{"activity_id": int(k), "pliki": [{x: f[x] for x in ("nazwa", "rozmiar_b", "utworzony", "id")}
+                                                   for f in v],
+                  "identyczne": len({f["md5"] for f in v}) == 1 and v[0]["md5"] is not None}
+                 for k, v in sorted(po_id.items()) if len(v) > 1]
+    po_md5: dict[str, list] = {}
+    for f in pliki:
+        if f["md5"]:
+            po_md5.setdefault(f["md5"], []).append(f["nazwa"])
+    # ta sama treść pod różnymi numerami (albo bez numeru) - duplikaty z tym samym numerem są już wyżej
+    ta_sama_tresc = [n for n in po_md5.values() if len({dysk_google.id_aktywnosci(x) for x in n}) > 1]
+    inne = [f["nazwa"] for f in pliki if not f["activity_id"]]
+
+    wynik: dict[str, Any] = {
+        "folder": folder,
+        "podsumowanie": {"pliki": len(pliki), "aktywnosci_z_plikiem": len(po_id),
+                         "duplikaty": len(duplikaty), "pliki_bez_numeru_aktywnosci": len(inne)},
+        "duplikaty": duplikaty,
+        "ta_sama_tresc_rozne_nazwy": ta_sama_tresc or None,
+        "pliki_bez_numeru_aktywnosci": inne[:50] or None,
+        "najstarszy_i_najnowszy_numer": [min(po_id), max(po_id)] if po_id else None,
+    }
+
+    if a.get("od") or a.get("do") or a.get("uzupelnij"):
+        akt = _z_garminem(lambda k: garmin_dane.aktywnosci(k, a.get("od"), a.get("do"), a.get("sport")))
+        brak = [x for x in akt if str(x["id"]) not in po_id]
+        wynik["zakres_garmin"] = {"od": a.get("od"), "do": a.get("do"), "aktywnosci": len(akt),
+                                  "z_plikiem": len(akt) - len(brak), "bez_pliku": len(brak)}
+        wynik["brakujace"] = [{"activity_id": x["id"], "start": x.get("start"), "nazwa": x.get("nazwa"),
+                               "sport": x.get("sport")} for x in brak]
+        if a.get("uzupelnij") and brak:
+            do_wgrania = brak[:MAX_FIT_NARAZ]
+            opisy = {str(x["id"]): f"{(x.get('start') or '')[:10]} {x.get('nazwa') or ''}".strip() for x in do_wgrania}
+            wynik["uzupelniono"] = _wgraj_na_dysk(refresh, [str(x["id"]) for x in do_wgrania], opisy, pliki)
+            if len(brak) > MAX_FIT_NARAZ:
+                wynik["uwaga"] = f"Wgrano {MAX_FIT_NARAZ} z {len(brak)} brakujących - wywołaj ponownie, żeby dograć resztę."
+    return wynik
+
+
 def t_polacz_dysk_google(a: dict) -> dict:
     if not dysk_google.ma_klienta():
         raise BladNarzedzia(
             "Brak klienta OAuth Google na serwerze. Właściciel musi raz: (1) w Google Cloud Console utworzyć "
             "projekt i włączyć Google Drive API, (2) skonfigurować ekran zgody OAuth (typ zewnętrzny, zakres "
-            "drive.file, opublikować aplikację), (3) utworzyć identyfikator klienta OAuth typu „Aplikacja "
+            "drive, opublikować aplikację), (3) utworzyć identyfikator klienta OAuth typu „Aplikacja "
             f"internetowa” z URI przekierowania {request.url_root.rstrip('/')}/google/powrot, (4) wpisać "
             "GOOGLE_CLIENT_ID i GOOGLE_CLIENT_SECRET w zmiennych serwera na Render. Szczegóły: README, „Dysk Google”.")
     link = request.url_root.rstrip("/") + url_for("mcp.google_polacz", token=_szyfruj("google_start", "1"))
@@ -417,6 +487,15 @@ NARZEDZIA: dict[str, dict] = {
             "activity_id": {"type": ["string", "integer"]}, "od": _DATA, "do": _DATA,
             "sport": {"type": "string"}, "cel": {"type": "string", "enum": ["dysk", "link"]},
             "zasil_baze": {"type": "boolean"}}},
+    },
+    "stan_dysku": {
+        "fn": t_stan_dysku, "ro": False, "destrukcyjne": False,
+        "opis": "Stan folderu z plikami FIT na Dysku Google: liczba plików, duplikaty (ten sam numer aktywności "
+                "w kilku plikach, np. 123.zip i 123_ACTIVITY.zip; flaga identyczne = ta sama treść), pliki bez numeru. "
+                "Z od/do (do 92 dni) porównuje z aktywnościami w Garmin Connect i wypisuje brakujące; "
+                "uzupelnij=true dogrywa brakujące (do 20 na wywołanie). Niczego nie kasuje.",
+        "schema": {"type": "object", "properties": {
+            "od": _DATA, "do": _DATA, "sport": {"type": "string"}, "uzupelnij": {"type": "boolean"}}},
     },
     "polacz_dysk_google": {
         "fn": t_polacz_dysk_google, "ro": True,

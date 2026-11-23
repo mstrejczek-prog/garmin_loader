@@ -17,10 +17,11 @@ treningowych do Garmin Connect i odczytu własnych danych treningowych. Nie jest
 <li><b>Garmin Connect</b>: plany treningowe, kalendarz, aktywności, dane o śnie, HRV, tętnie i gotowości treningowej
 właściciela konta. Hasło służy tylko do zalogowania i nie jest zapisywane; token logowania jest przechowywany
 zaszyfrowany.</li>
-<li><b>Dysk Google</b> (opcjonalnie): aplikacja używa wyłącznie zakresu <code>drive.file</code> – może tworzyć
-i odczytywać tylko pliki i foldery, które sama utworzyła (pliki FIT z treningami w folderze
-„Dane treningowe/FIT (surowe pliki z Garmina)”). Nie ma dostępu do pozostałych plików na Dysku.
-Token Google jest przechowywany zaszyfrowany w konfiguracji serwera.</li>
+<li><b>Dysk Google</b> (opcjonalnie): aplikacja prosi o zakres <code>drive</code>, ale w praktyce korzysta
+tylko z jednego folderu wskazanego przez właściciela (pliki FIT z treningami): odczytuje listę plików
+(nazwa, rozmiar, suma kontrolna), żeby wykrywać duplikaty i braki, i dodaje do niego brakujące pliki FIT.
+Aplikacja nie usuwa, nie zmienia i nie udostępnia żadnych plików. Token Google jest przechowywany zaszyfrowany
+w konfiguracji serwera.</li>
 </ul>
 
 <h2>Komu dane są przekazywane</h2>

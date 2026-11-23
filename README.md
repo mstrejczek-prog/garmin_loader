@@ -114,6 +114,7 @@ i desktop). Wtedy w zwykłej rozmowie Claude sam:
 | `plan_vs_wykonanie` | `activity_id` | plan z kalendarza vs wykonanie: siła per krok (serie, powtórzenia, ciężar), wytrzymałość per okrążenie (czas, dystans, HR, moc, tempo vs cel), flaga `odchylenie` |
 | `pobierz_fit` | `activity_id` albo `od`, `do`, `sport` (do 20), `cel` (`dysk`/`link`) | oryginalne pliki FIT: na Dysk Google (gdy połączony) albo linki ważne 1 h |
 | `polacz_dysk_google` | - | link do jednorazowego połączenia Dysku Google i stan połączenia |
+| `stan_dysku` | `od`, `do` (do 92 dni), `sport`, `uzupelnij` | pliki FIT na Dysku: duplikaty, pliki bez numeru, brakujące aktywności, dogranie braków |
 | `wellness` | `od`, `do` (do 14 dni) | sen, HRV, tętno spoczynkowe, Body Battery, stres |
 | `gotowosc` | `data` | Training Readiness, Training Status, ACWR, VO2max |
 | `surowe_dane` | `zrodlo`, `id` | diagnostyka: surowa odpowiedź Garmina (do ~30 kB) |
@@ -154,21 +155,29 @@ uruchamiasz lokalnie `python ingest_fit.py treningi.duckdb <pliki>`.
 
 ### Dysk Google (pliki FIT)
 
-`pobierz_fit` może wgrywać oryginalne pliki FIT prosto na Twój Dysk Google, do folderu
-**„Dane treningowe/FIT (surowe pliki z Garmina)”** (zmienisz to zmienną `DYSK_FOLDER`). Pliki o tej samej
-nazwie nie są dublowane. Jeśli masz „Dysk Google na komputer”, folder synchronizuje się lokalnie i wystarczy
+`pobierz_fit` może wgrywać oryginalne pliki FIT prosto na Twój Dysk Google, do Twojego folderu z plikami FIT
+(`DYSK_FOLDER_ID` = ID folderu albo `DYSK_FOLDER` = ścieżka od „Mój dysk”, domyślnie
+„Dane treningowe/FIT (surowe pliki z Garmina)”). Plik nie jest dogrywany, jeśli w folderze jest już plik
+z tym samym numerem aktywności (`24644475709.zip`, `24644475709_ACTIVITY.zip` itd.). Nowe pliki mają nazwę
+jak eksport z Garmin Connect: `<activity_id>.zip`.
+
+Narzędzie `stan_dysku` pokazuje, co jest w folderze: liczbę plików, duplikaty (ten sam numer aktywności
+w kilku plikach, z informacją, czy treść jest identyczna), pliki bez numeru, a z `od`/`do` - aktywności
+z Garmin Connect, których brakuje na Dysku (`uzupelnij=true` je dogrywa). Konektor niczego na Dysku nie kasuje. Jeśli masz „Dysk Google na komputer”, folder synchronizuje się lokalnie i wystarczy
 uruchomić `python ingest_fit.py treningi.duckdb "<ten folder>"`.
 
-Konektor używa zakresu **`drive.file`**: widzi tylko pliki i foldery, które sam utworzył (nie ma dostępu do
-reszty Dysku). Dlatego folder zakłada sam - jeśli masz już folder o tej nazwie, obok powstanie drugi.
+Konektor prosi o zakres **`drive`**, bo musi widzieć pliki, które wgrałeś sam (np. eksport z Garmina
+w folderze vaulta) - przy węższym `drive.file` widzi tylko własne pliki i zakłada osobny folder. W kodzie
+czyta tylko listę plików folderu docelowego i dodaje do niego pliki. Węższy zakres: `DYSK_ZAKRES`.
 
 Jednorazowa konfiguracja (ok. 10 minut):
 
 1. https://console.cloud.google.com → nowy projekt (np. „Garmin Plan Loader”).
 2. **APIs & Services → Library → Google Drive API → Enable**.
 3. **Google Auth Platform → Branding / Audience**: typ **External**, nazwa aplikacji, Twój e-mail;
-   w **Data access** dodaj zakres `.../auth/drive.file`; w **Audience** kliknij **Publish app**
-   (w trybie „Testing” Google unieważnia token po 7 dniach; `drive.file` nie wymaga weryfikacji Google).
+   w **Data access** dodaj zakres `.../auth/drive`; w **Audience** kliknij **Publish app**
+   (w trybie „Testing” Google unieważnia token po 7 dniach). Aplikacja zostaje „niezweryfikowana” - przy
+   logowaniu Google pokaże ostrzeżenie; dla własnego użytku to wystarcza.
 4. **Clients → Create client → Web application**, w **Authorized redirect URIs** wpisz
    `https://garmin-plan-loader.onrender.com/google/powrot`. Skopiuj **Client ID** i **Client secret**.
 5. Render → serwis → **Environment**: dodaj `GOOGLE_CLIENT_ID` i `GOOGLE_CLIENT_SECRET`, zapisz z wdrożeniem.
@@ -231,7 +240,8 @@ Działa też na każdym hostingu z `Procfile` (Railway, Heroku, Fly.io…). Zmie
 | `USTAWIENIA` | Opcjonalnie strefy i FTP dla connectora (ten sam przycisk). |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Klient OAuth Google (Dysk Google dla plików FIT). |
 | `GOOGLE_TOKEN` | Zaszyfrowany token Dysku Google (strona po `polacz_dysk_google`). |
-| `DYSK_FOLDER` | Opcjonalnie folder na Dysku (domyślnie „Dane treningowe/FIT (surowe pliki z Garmina)”). |
+| `DYSK_FOLDER_ID` | ID folderu z plikami FIT na Dysku (pierwszeństwo przed `DYSK_FOLDER`). |
+| `DYSK_FOLDER` | Opcjonalnie ścieżka folderu na Dysku (domyślnie „Dane treningowe/FIT (surowe pliki z Garmina)”). |
 
 Uwagi:
 

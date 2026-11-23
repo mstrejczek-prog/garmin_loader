@@ -1,28 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-Zapis plików FIT na Dysk Google użytkownika (Google Drive API v3, OAuth 2.0, zakres drive.file).
+Pliki FIT na Dysku Google użytkownika (Google Drive API v3, OAuth 2.0).
 
-drive.file = konektor widzi i zmienia WYŁĄCZNIE pliki i foldery, które sam utworzył - nie ma dostępu
-do reszty Dysku. Dlatego folder docelowy jest zakładany przez konektor (nawet jeśli masz już folder
-o tej samej nazwie, powstanie osobny - konektor go nie widzi).
+Zakres domyślny: drive (pełny) - konektor musi widzieć pliki, które użytkownik wgrał sam (np. eksport
+z Garmina w folderze vaulta), żeby wykrywać duplikaty i braki oraz dogrywać pliki do TEGO SAMEGO folderu.
+Kod tylko czyta i dodaje pliki w folderze docelowym; niczego nie kasuje. Zakres można zawęzić zmienną
+DYSK_ZAKRES (np. https://www.googleapis.com/auth/drive.file - wtedy widzi tylko własne pliki).
 
 Konfiguracja (zmienne środowiskowe):
   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET - klient OAuth (Google Cloud Console, typ „Aplikacja internetowa”,
       URI przekierowania: https://<serwer>/google/powrot)
   GOOGLE_TOKEN  - zaszyfrowany refresh token (strona po zalogowaniu przez /google/polacz/... go pokazuje)
-  DYSK_FOLDER   - opcjonalnie ścieżka folderu, domyślnie „Dane treningowe/FIT (surowe pliki z Garmina)”
+  DYSK_FOLDER_ID - opcjonalnie ID folderu docelowego (pewniejsze niż ścieżka, gdy są foldery o tej samej nazwie)
+  DYSK_FOLDER   - opcjonalnie ścieżka folderu od „Mój dysk”, domyślnie „Dane treningowe/FIT (surowe pliki z Garmina)”
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from urllib.parse import urlencode
 
 import requests
 
-ZAKRES = "https://www.googleapis.com/auth/drive.file"
+ZAKRES_DOMYSLNY = "https://www.googleapis.com/auth/drive"
 URL_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 URL_TOKEN = "https://oauth2.googleapis.com/token"
 URL_PLIKI = "https://www.googleapis.com/drive/v3/files"
@@ -49,8 +52,18 @@ def ma_klienta() -> bool:
     return all(klient())
 
 
+def zakres() -> str:
+    return os.environ.get("DYSK_ZAKRES", "").strip() or ZAKRES_DOMYSLNY
+
+
 def folder() -> str:
     return (os.environ.get("DYSK_FOLDER", "").strip() or FOLDER_DOMYSLNY).strip("/")
+
+
+def id_aktywnosci(nazwa: str) -> str | None:
+    """Numer aktywności Garmina z nazwy pliku: 24644475709.zip, 24644475709_ACTIVITY.fit -> 24644475709."""
+    m = re.match(r"^(\d{6,})(?:[_.\-]|$)", nazwa or "")
+    return m.group(1) if m else None
 
 
 def resetuj_cache() -> None:
@@ -63,7 +76,7 @@ def resetuj_cache() -> None:
 def adres_logowania(redirect_uri: str, state: str) -> str:
     cid, _ = klient()
     return URL_AUTH + "?" + urlencode({
-        "client_id": cid, "redirect_uri": redirect_uri, "response_type": "code", "scope": ZAKRES,
+        "client_id": cid, "redirect_uri": redirect_uri, "response_type": "code", "scope": zakres(),
         "access_type": "offline", "prompt": "consent", "include_granted_scopes": "true", "state": state,
     })
 
@@ -136,6 +149,9 @@ def _znajdz(refresh: str, nazwa: str, rodzic: str, mime: str | None = None) -> d
 
 
 def _id_folderu(refresh: str) -> str:
+    stale = os.environ.get("DYSK_FOLDER_ID", "").strip()
+    if stale:
+        return stale
     sciezka = folder()
     with _lock:
         if sciezka in _cache["foldery"]:
@@ -152,12 +168,44 @@ def _id_folderu(refresh: str) -> str:
     return rodzic
 
 
-def wyslij(refresh: str, nazwa: str, dane: bytes, mime: str = "application/zip") -> dict:
-    """Wgrywa plik do folderu docelowego; plik o tej samej nazwie nie jest dublowany."""
+def opis_folderu(refresh: str) -> dict:
+    fid = _id_folderu(refresh)
+    d = _zapytanie("GET", f"{URL_PLIKI}/{fid}", refresh, params={"fields": "id,name,webViewLink"})
+    return {"id": fid, "nazwa": d.get("name"), "link": d.get("webViewLink")}
+
+
+def lista_plikow(refresh: str, limit: int = 5000) -> list[dict]:
+    """Pliki (bez podfolderów) w folderze docelowym, z numerem aktywności wyciągniętym z nazwy."""
     rodzic = _id_folderu(refresh)
-    istniejacy = _znajdz(refresh, nazwa, rodzic)
-    if istniejacy:
-        return {"nazwa": nazwa, "status": "juz_byl", "id": istniejacy["id"], "link": istniejacy.get("webViewLink")}
+    pliki, strona = [], None
+    while len(pliki) < limit:
+        params = {"q": f"'{rodzic}' in parents and trashed = false and mimeType != '{MIME_FOLDER}'",
+                  "fields": "nextPageToken,files(id,name,size,md5Checksum,createdTime,webViewLink)",
+                  "spaces": "drive", "pageSize": 1000, "orderBy": "name"}
+        if strona:
+            params["pageToken"] = strona
+        d = _zapytanie("GET", URL_PLIKI, refresh, params=params)
+        for f in d.get("files") or []:
+            pliki.append({"nazwa": f.get("name"), "id": f.get("id"), "activity_id": id_aktywnosci(f.get("name")),
+                          "rozmiar_b": int(f["size"]) if f.get("size") else None, "md5": f.get("md5Checksum"),
+                          "utworzony": (f.get("createdTime") or "")[:10] or None, "link": f.get("webViewLink")})
+        strona = d.get("nextPageToken")
+        if not strona:
+            break
+    return pliki
+
+
+def wyslij(refresh: str, nazwa: str, dane: bytes, mime: str = "application/zip",
+           istniejace: list[dict] | None = None) -> dict:
+    """Wgrywa plik do folderu docelowego. Nie dubluje: pomija, gdy jest już plik o tej samej nazwie
+    albo z tym samym numerem aktywności (np. 24644475709.zip vs 24644475709_ACTIVITY.zip)."""
+    rodzic = _id_folderu(refresh)
+    aid = id_aktywnosci(nazwa)
+    if istniejace is None:
+        istniejace = lista_plikow(refresh)
+    for f in istniejace:
+        if f["nazwa"] == nazwa or (aid and f.get("activity_id") == aid):
+            return {"nazwa": f["nazwa"], "status": "juz_byl", "id": f["id"], "link": f.get("link")}
     granica = "garmin-plan-loader-granica"
     meta = json.dumps({"name": nazwa, "parents": [rodzic]}).encode()
     cialo = (f"--{granica}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode() + meta +
