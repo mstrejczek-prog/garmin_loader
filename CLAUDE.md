@@ -30,7 +30,7 @@ Cały dostęp do Garmina idzie **jedną nieoficjalną biblioteką `garminconnect
 podpisane linki `/fit/<token>`, 1 h), `polacz_dysk_google` (link → `/google/polacz/<token>` → Google →
 `/google/powrot` pokazuje zaszyfrowany `GOOGLE_TOKEN` do wpisania w Render), `stan_dysku` (duplikaty, braki
 vs Garmin, `uzupelnij`), `wellness` (do 92 dni, `pola`), `gotowosc`, `strumienie`, `sklad_ciala`,
-`historia_metryk`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
+`historia_metryk`, `sprzet`, `rekordy`, `prognozy`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
 akceptacja użytkownika → `wyslij_plan`. Błędy narzędzi zwracamy jako `isError` z polskim komunikatem.
 Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests/test_mcp.py`.
 
@@ -82,7 +82,7 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 - [x] Dysk Google dla `pobierz_fit`: połączony i sprawdzony 2026-11-23 (aplikacja OAuth opublikowana, „In production”).
 - [x] Specyfikacja 2026-11-23, P2 (2026-11-23): rozszerzony `trening`, `strumienie`, `sklad_ciala`, `historia_metryk`,
       `wellness` do 92 dni. Zweryfikowane na żywym API (bieg 24559234030, basen 25124549994, rok historii).
-- [ ] Specyfikacja 2026-11-23: P3 (`sprzet`, `rekordy`, `prognozy`).
+- [x] Specyfikacja 2026-11-23, P3 (2026-11-23): `sprzet`, `rekordy` (mapowanie typeId w `TYPY_REKORDOW`), `prognozy`.
 - [ ] Etap 2: `analiza_treningu` z pliku FIT (NP, TSS, IF, decoupling, krzywa mocy – kod w
       FIT_ANALYZER `ingest_fit.py`) i `obciazenie` (CTL/ATL/TSB).
 - [ ] Etap 3: README, archiwizacja repo FIT_ANALYZER (robi właściciel w ustawieniach GitHub).

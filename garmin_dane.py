@@ -1072,7 +1072,7 @@ def sprzet(klient, wycofany: bool = False) -> list[dict]:
 TYPY_REKORDOW = {
     1: ("bieg", "1 km", "s"), 2: ("bieg", "1 mila", "s"), 3: ("bieg", "5 km", "s"), 4: ("bieg", "10 km", "s"),
     5: ("bieg", "półmaraton", "s"), 6: ("bieg", "maraton", "s"), 7: ("bieg", "najdłuższy bieg", "m"),
-    8: ("rower", "najdłuższa jazda", "m"), 9: ("rower", "największe przewyższenie", "m"),
+    8: ("rower", "najdłuższa jazda", "m"), 9: ("rower", "największe przewyższenie", "przewyzszenie_m"),
     10: ("rower", "najwyższa moc 20 min", "W"), 11: ("rower", "40 km", "s"),
     12: ("kroki", "najwięcej kroków w dniu", "kroki"), 13: ("kroki", "najwięcej kroków w tygodniu", "kroki"),
     14: ("kroki", "najwięcej kroków w miesiącu", "kroki"), 15: ("kroki", "najdłuższa seria celu kroków", "dni"),

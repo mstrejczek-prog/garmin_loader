@@ -19,6 +19,9 @@ treningi, wysyłać je na zegarek i analizować dane.
 | `strumienie` | przebieg treningu w czasie (HR, moc, tempo…) próbkowany co N s |
 | `sklad_ciala` | masa i skład ciała, nawodnienie |
 | `historia_metryk` | trend formy do roku: VO2max, status, ACWR, gotowość, HRV, tętno spocz., FTP, próg |
+| `sprzet` | buty i rowery z przebiegiem i zużyciem względem limitu |
+| `rekordy` | rekordy osobiste (bieg, rower, pływanie, kroki) |
+| `prognozy` | prognozy czasów startowych Garmina (szacunek) |
 | `serie` | serie siłowe: ćwiczenie, powtórzenia, ciężar (kg), tonaż per ćwiczenie |
 | `plan_treningu` | kroki zaplanowanego treningu (`workout_id` z `kalendarz`) |
 | `plan_vs_wykonanie` | plan vs wykonanie dla aktywności zrobionej z kalendarza, z flagą odchylenia |

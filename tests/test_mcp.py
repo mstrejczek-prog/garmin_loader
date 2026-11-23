@@ -519,6 +519,7 @@ class AtrapaP3(AtrapaDane):
                 {"typeId": 10, "activityType": "road_biking", "value": 207.71},
                 {"typeId": 20, "activityType": "lap_swimming", "value": 597.07},
                 {"typeId": 7, "activityType": "running", "value": 21355.76},
+                {"typeId": 9, "activityType": "road_biking", "value": 1056.0},
                 {"typeId": 99, "activityType": None, "value": 1}]
 
     def get_race_predictions(self, startdate=None, enddate=None, _type=None):
@@ -548,6 +549,7 @@ class TestMcpP3(BazaMcp):
         self.assertEqual([x for x in r if x["rekord"] == "najwyższa moc 20 min"][0]["moc_w"], 208)
         self.assertEqual([x for x in r if x["rekord"] == "400 m"][0]["tempo_100m"], "2:29")
         self.assertEqual([x for x in r if x["rekord"] == "najdłuższy bieg"][0]["dystans_km"], 21.36)
+        self.assertEqual([x for x in r if x["rekord"] == "największe przewyższenie"][0]["przewyzszenie_m"], 1056)
         _, tekst = self.narzedzie("rekordy", sport="plywanie")
         self.assertEqual([x["rekord"] for x in json.loads(tekst)], ["400 m"])
 

@@ -74,5 +74,17 @@ od maja 2025 (dogrywanie 27 plików, 15 kopii w koszu, błędny folder w koszu).
 - Zegarek zapisuje odpoczynek przy ścianie bez przycisku jako długość (np. 25 m w 217 s) – stąd mediana tempa.
 
 **Otwarte**
-- P3: `sprzet`, `rekordy`, `prognozy`.
 - `strumienie`: Garmin próbkuje nierówno (gęściej na początku) – `krok_s` jest przybliżony.
+
+
+### 2026-11-23 – Priorytet 3 (wdrożone)
+
+| Narzędzie | Wynik na żywym API |
+|---|---|
+| `sprzet` | Adidas Adizero Boston 12: 1141 km przy limicie 644 km (177%), 134 aktywności; Scott Speedster Gravel: 1794 km / 10 000 km (18%) |
+| `rekordy` | 20 rekordów: bieg 1 km 3:49, 5 km 20:00, 10 km 41:02, półmaraton 1:28:10 (Cracovia 11.10.2026); rower 100 km, 1056 m przewyższenia, 208 W / 20 min, 40 km w 1:11:10; basen 2,17 km, 400 m 9:57, 1000 m 35:49; kroki |
+| `prognozy` | 5 km 19:44, 10 km 40:50, półmaraton 1:28:21, maraton 3:25:07; trend miesięczny półmaratonu 1:34:37 (VI) → 1:28:16 (XI) |
+
+Zweryfikowane: `typeId` rekordów nie ma etykiet w odpowiedzi - mapowanie w `TYPY_REKORDOW` (bieg 1–7, rower 8–11,
+kroki 12–16, pływanie 17–25). Rekord pływacki „100 m” 1:03 odstaje od reszty (400 m 2:29/100 m) - możliwy
+błąd zegarka w tej aktywności (2026-01-10); warto sprawdzić w Garmin Connect.

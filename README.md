@@ -120,6 +120,9 @@ i desktop). Wtedy w zwykłej rozmowie Claude sam:
 | `sklad_ciala` | `od`, `do` (do 1 roku), `nawodnienie` | masa, tkanka tłuszczowa, masa mięśniowa i kostna, woda, BMI, źródło; opcjonalnie wypita woda (do 31 dni) |
 | `historia_metryk` | `od`, `do` (do 1 roku), `agregacja` (`dzien`/`tydzien`) | tabela trendu: VO2max bieg/rower, Training Status, obciążenie ostre/przewlekłe, ACWR, poranna gotowość, HRV, tętno spoczynkowe, Endurance/Hill Score, FTP, próg mleczanowy (HR, tempo, moc) |
 | `gotowosc` | `data` | Training Readiness, Training Status, ACWR, VO2max |
+| `sprzet` | `wycofany` | buty i rowery: przebieg km, limit km, zużycie %, aktywności, czas, od kiedy, status |
+| `rekordy` | `sport` (`bieg`/`rower`/`plywanie`/`kroki`) | rekordy osobiste z czasem, tempem/prędkością, datą i aktywnością |
+| `prognozy` | `od`, `do` (opcjonalnie, do roku) | prognozy Garmina 5 km / 10 km / półmaraton / maraton z tempem, opcjonalnie miesięcznie |
 | `surowe_dane` | `zrodlo`, `id` albo `od`/`do` | diagnostyka: surowa odpowiedź Garmina (do ~30 kB) |
 
 Konwencje odpowiedzi: polskie klucze bez ogonków, daty RRRR-MM-DD, jednostki w nazwach pól
