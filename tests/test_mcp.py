@@ -296,6 +296,22 @@ class TestMcpPlanVsWykonanie(BazaMcp):
         plank = [k for k in d["kroki"] if k["cwiczenie_plan"] and "PLANK" in k["cwiczenie_plan"]][0]
         self.assertEqual(plank["serie_wykonane"], 1)
 
+    def test_serie_uzupelnia_nazwe_z_planu(self):
+        class Niepelna(AtrapaSila):
+            def get_activity_exercise_sets(self, aid):
+                d = super().get_activity_exercise_sets(aid)
+                d["exerciseSets"][0]["exercises"] = [{"category": "UNKNOWN", "name": None, "probability": 50}]
+                return d
+        garmin_io._nowy_klient = Niepelna
+        _, tekst = self.narzedzie("serie", activity_id=25162650914)
+        d = json.loads(tekst)
+        self.assertTrue(d["nazwy_uzupelnione_z_planu"])
+        self.assertTrue(d["serie"][0]["nazwa_z_planu"])
+        self.assertEqual(d["serie"][0]["cwiczenie"], d["serie"][2]["cwiczenie"])   # ta sama nazwa co 2. seria
+        self.assertNotIn("_kat", d["serie"][0])
+        lat = [c for c in d["cwiczenia"] if "UNKNOWN" not in c["cwiczenie"]]
+        self.assertEqual(len(lat), len(d["cwiczenia"]))
+
     def test_plan_vs_wykonanie_bez_planu(self):
         w, tekst = self.narzedzie("plan_vs_wykonanie", activity_id=25145798508)
         self.assertNotIn("isError", w)

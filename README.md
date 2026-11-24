@@ -216,8 +216,9 @@ Uwagi:
 
 - To serwer **jednego użytkownika**: działa na koncie, którego token jest w `GARMIN_TOKEN`.
   Bez `MCP_TOKEN` endpoint `/mcp` jest wyłączony.
-- Gdy Claude zgłosi, że **logowanie wygasło**, zaloguj się ponownie na stronie i podmień
-  `GARMIN_TOKEN`. Biblioteka odświeża token sama, ale zmiennej środowiskowej nie może nadpisać;
+- Gdy Claude zgłosi, że **logowanie wygasło**, zaloguj się ponownie na stronie swoim kontem Garmin. Przy
+  połączonym Dysku Google i ustawionym `GARMIN_WLASCICIEL` logowanie zapisze się dla connectora samo (token
+  trzymany zaszyfrowany na Dysku, odświeżany automatycznie); bez Dysku podmień `GARMIN_TOKEN`. Biblioteka odświeża token sama, ale zmiennej środowiskowej nie może nadpisać;
   jeśli zdarza się to po każdym uśpieniu serwera, trzeba będzie trzymać token w małej bazie.
 - Darmowy Render usypia serwer po ~15 minutach - pierwsze pytanie po przerwie może się nie
   zmieścić w czasie; wtedy poproś Claude, żeby spróbował jeszcze raz.
@@ -250,6 +251,7 @@ Działa też na każdym hostingu z `Procfile` (Railway, Heroku, Fly.io…). Zmie
 | `GARMIN_TOKEN` | Zaszyfrowany token Garmina dla connectora (przycisk „Connector dla Claude”). |
 | `USTAWIENIA` | Opcjonalnie strefy i FTP dla connectora (ten sam przycisk). |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Klient OAuth Google (Dysk Google dla plików FIT). |
+| `GARMIN_WLASCICIEL` | profileId Twojego konta Garmin - tylko jego logowanie na stronie zapisuje się dla connectora. |
 | `GOOGLE_TOKEN` | Zaszyfrowany token Dysku Google (strona po `polacz_dysk_google`). |
 | `DYSK_FOLDER_ID` | ID folderu z plikami FIT na Dysku (pierwszeństwo przed `DYSK_FOLDER`). |
 | `DYSK_FOLDER` | Opcjonalnie ścieżka folderu na Dysku (domyślnie „Dane treningowe/FIT (surowe pliki z Garmina)”). |

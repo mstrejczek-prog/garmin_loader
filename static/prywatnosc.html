@@ -20,8 +20,9 @@ zaszyfrowany.</li>
 <li><b>Dysk Google</b> (opcjonalnie): aplikacja prosi o zakres <code>drive</code>, ale w praktyce korzysta
 tylko z jednego folderu wskazanego przez właściciela (pliki FIT z treningami): odczytuje listę plików
 (nazwa, rozmiar, suma kontrolna), żeby wykrywać duplikaty i braki, i dodaje do niego brakujące pliki FIT.
-Aplikacja nie usuwa, nie zmienia i nie udostępnia żadnych plików. Token Google jest przechowywany zaszyfrowany
-w konfiguracji serwera.</li>
+Aplikacja nie usuwa i nie udostępnia żadnych plików. Dodatkowo zapisuje w katalogu głównym Dysku właściciela
+jeden plik <code>.garmin-plan-loader-token.json</code> z zaszyfrowanym tokenem logowania Garmina (żeby logowanie
+nie wygasało po restarcie serwera). Token Google jest przechowywany zaszyfrowany w konfiguracji serwera.</li>
 </ul>
 
 <h2>Komu dane są przekazywane</h2>

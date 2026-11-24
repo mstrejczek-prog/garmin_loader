@@ -87,28 +87,115 @@ def _token_garmina() -> str:
     return tok
 
 
-def _klient_garmina():
+PLIK_TOKENU = ".garmin-plan-loader-token.json"   # w katalogu głównym Dysku Google, zaszyfrowany SECRET_KEY
+_zapisany_token: str | None = None
+
+
+def _wlasciciel() -> int | None:
+    v = os.environ.get("GARMIN_WLASCICIEL", "").strip()
+    return int(v) if v.isdigit() else None
+
+
+def _token_z_dysku() -> str | None:
+    refresh = _refresh_google()
+    if not refresh:
+        return None
+    try:
+        tekst = dysk_google.odczytaj_tekst(refresh, PLIK_TOKENU)
+        if not tekst:
+            return None
+        return _odszyfruj("token", json.loads(tekst).get("token")) if _odszyfruj else None
+    except Exception as e:  # noqa: BLE001 - magazyn jest pomocniczy, nie może psuć logowania
+        log.warning("nie udało się odczytać tokenu Garmina z Dysku: %s", e)
+        return None
+
+
+def _zapisz_token(tok: str, profil: int | None = None) -> bool:
+    global _zapisany_token
+    refresh = _refresh_google()
+    if not refresh or not _szyfruj or not tok:
+        return False
+    try:
+        dysk_google.zapisz_tekst(refresh, PLIK_TOKENU, json.dumps({
+            "token": _szyfruj("token", tok), "profil": profil,
+            "zapisano": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(timespec="seconds")}))
+        _zapisany_token = tok
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("nie udało się zapisać tokenu Garmina na Dysku: %s", e)
+        return False
+
+
+def zapisz_logowanie_wlasciciela(klient) -> dict:
+    """Po zalogowaniu na stronie: zapisuje token dla connectora, ale tylko dla konta właściciela."""
     global _klient
+    profil = getattr(klient, "profile_id", None)
+    wl = _wlasciciel()
+    if wl is None:
+        return {"zapisano": False, "profil": profil,
+                "powod": "Na serwerze nie ustawiono GARMIN_WLASCICIEL (id profilu właściciela connectora)."}
+    if profil != wl:
+        return {"zapisano": False, "profil": profil, "powod": "To konto nie jest właścicielem connectora."}
+    if not _refresh_google():
+        return {"zapisano": False, "profil": profil, "powod": "Dysk Google nie jest połączony."}
+    ok = _zapisz_token(garmin_io.token(klient), profil)
+    if ok:
+        with _klient_lock:
+            _klient = None                       # następne wywołanie użyje nowego logowania
+    return {"zapisano": ok, "profil": profil, "powod": None if ok else "Zapis na Dysku Google się nie udał."}
+
+
+def _klient_garmina():
+    global _klient, _zapisany_token
     with _klient_lock:
-        if _klient is None:
+        if _klient is not None:
+            return _klient
+        kandydaci, blad_env = [], None
+        tok_dysk = _token_z_dysku()
+        if tok_dysk:
+            kandydaci.append(("dysk", tok_dysk))
+        try:
+            kandydaci.append(("zmienna", _token_garmina()))
+        except BladNarzedzia as e:
+            blad_env = e
+        if not kandydaci:
+            raise blad_env or BladNarzedzia("Brak logowania Garmina.")
+        for zrodlo, tok in kandydaci:
             try:
-                _klient = garmin_io.zaloguj_tokenem(_token_garmina())
-            except garmin_io.TokenWygasl as e:
-                raise BladNarzedzia("Logowanie Garmina wygasło. Zaloguj się na stronie Plan Loadera, kliknij "
-                                    "„Connector dla Claude” i zaktualizuj GARMIN_TOKEN na serwerze.") from e
+                _klient = garmin_io.zaloguj_tokenem(tok)
+                _zapisany_token = tok             # zapis na Dysk dopiero, gdy biblioteka odświeży token
+                return _klient
+            except garmin_io.TokenWygasl:
+                log.warning("token Garmina (%s) odrzucony", zrodlo)
+                continue
             except garmin_io.BladGarmin as e:
                 raise BladNarzedzia(str(e)) from e
-        return _klient
+        raise BladNarzedzia("Logowanie Garmina wygasło. Zaloguj się na stronie Plan Loadera swoim kontem Garmin - "
+                            "logowanie zapisze się automatycznie dla Claude (na Twoim Dysku Google). Bez Dysku: "
+                            "kliknij „Connector dla Claude” i zaktualizuj GARMIN_TOKEN na serwerze.")
+
+
+def _po_wywolaniu(k) -> None:
+    """Biblioteka mogła odświeżyć token (Garmin unieważnia wtedy stary) - zapisz najnowszy na Dysku."""
+    try:
+        tok = garmin_io.token(k)
+    except Exception:  # noqa: BLE001
+        return
+    if tok and tok != _zapisany_token:
+        _zapisz_token(tok, getattr(k, "profile_id", None))
 
 
 def _z_garminem(fn):
-    """Wywołanie na kliencie Garmina; przy wygasłym tokenie jedna próba ponownego logowania."""
+    """Wywołanie na kliencie Garmina; przy wygasłym tokenie jedna próba ponownego logowania
+    (np. inny proces gunicorna odświeżył token i zapisał nowy na Dysku)."""
     global _klient
     with _klient_lock:
         for proba in range(2):
             k = _klient_garmina()
             try:
-                return fn(k)
+                wynik = fn(k)
+                _po_wywolaniu(k)
+                return wynik
             except (BladNarzedzia, garmin_dane.BladDanych, plan.BladPlanu):
                 raise
             except Exception as e:  # noqa: BLE001

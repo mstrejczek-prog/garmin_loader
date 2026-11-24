@@ -12,6 +12,7 @@ import garmin_io  # noqa: E402
 import mcp_serwer  # noqa: E402
 import web  # noqa: E402
 from tests.test_mcp import BazaMcp, AtrapaSila  # noqa: E402
+from tests.test_web import TOKEN as TOKEN_GARMIN  # noqa: E402
 
 
 class Odp:
@@ -22,6 +23,11 @@ class Odp:
 
     def json(self):
         return self._d
+
+
+class OdpTekst:
+    def __init__(self, tekst):
+        self.status_code, self.text, self.content = 200, tekst, tekst.encode()
 
 
 class AtrapaGoogle:
@@ -42,6 +48,11 @@ class AtrapaGoogle:
 
     def request(self, metoda, url, headers=None, params=None, json=None, data=None, timeout=None):
         assert headers["Authorization"] == "Bearer a1"
+        if metoda == "GET" and url.startswith(dysk_google.URL_PLIKI + "/") and (params or {}).get("alt") == "media":
+            return OdpTekst(self.pliki[url.rsplit("/", 1)[1]].get("tresc", ""))
+        if metoda == "PATCH":
+            self.pliki[url.rsplit("/", 1)[1]]["tresc"] = data.decode()
+            return Odp(200, {"id": url.rsplit("/", 1)[1]})
         if metoda == "GET" and url.startswith(dysk_google.URL_PLIKI + "/"):
             fid = url.rsplit("/", 1)[1]
             return Odp(200, {"id": fid, "name": self.pliki.get(fid, {}).get("name", "folder"),
@@ -64,8 +75,11 @@ class AtrapaGoogle:
         fid = f"f{self.n}"
         if url == dysk_google.URL_UPLOAD:
             self.uploady += 1
-            meta = __import__("json").loads(data.split(b"\r\n\r\n", 1)[1].split(b"\r\n--", 1)[0])
-            self.pliki[fid] = {**meta, "mimeType": "application/zip"}
+            czesci = data.split(b"\r\n\r\n")
+            meta = __import__("json").loads(czesci[1].split(b"\r\n--", 1)[0])
+            tresc = czesci[2].rsplit(b"\r\n--", 1)[0]
+            self.pliki[fid] = {**meta, "mimeType": meta.get("mimeType", "application/zip"),
+                               "tresc": tresc.decode(errors="replace")}
             return Odp(200, {"id": fid, "name": meta["name"], "webViewLink": f"https://drive/{fid}"})
         self.pliki[fid] = json
         return Odp(200, {"id": fid})
@@ -77,7 +91,7 @@ class AtrapaDlugieId(AtrapaSila):
                  "startTimeLocal": f"{od} 08:00:00", "duration": 3600, "distance": 30000}]
 
 
-class TestDysk(BazaMcp):
+class BazaDysk(BazaMcp):
     def setUp(self):
         super().setUp()
         garmin_io._nowy_klient = AtrapaSila
@@ -96,6 +110,9 @@ class TestDysk(BazaMcp):
         dysk_google._http = self.stary_http
         dysk_google.resetuj_cache()
         super().tearDown()
+
+
+class TestDysk(BazaDysk):
 
     def test_bez_polaczenia_domyslnie_link(self):
         _, tekst = self.narzedzie("pobierz_fit", activity_id=25162650914)
@@ -199,6 +216,79 @@ class TestDysk(BazaMcp):
         w, tekst = self.narzedzie("polacz_dysk_google")
         self.assertTrue(w["isError"])
         self.assertIn("/google/powrot", tekst)
+
+
+class _WewnZmienny:
+    token = None
+
+    def dumps(self):
+        return _WewnZmienny.token or TOKEN_GARMIN
+
+
+class AtrapaWlasciciel(AtrapaSila):
+    """Klient z profile_id i tokenem, który biblioteka może „odświeżyć”."""
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.client = _WewnZmienny()
+        self.profile_id = AtrapaWlasciciel.profil
+
+    profil = 135
+
+
+class TestMagazynTokenu(BazaDysk):
+    def setUp(self):
+        super().setUp()
+        garmin_io._nowy_klient = AtrapaWlasciciel
+        AtrapaWlasciciel.profil = 135
+        _WewnZmienny.token = None
+        mcp_serwer._zapisany_token = None
+        self.env.setdefault("GARMIN_WLASCICIEL", os.environ.get("GARMIN_WLASCICIEL"))
+        os.environ["GARMIN_WLASCICIEL"] = "135"
+        os.environ["GOOGLE_TOKEN"] = web.szyfruj("google", "r1")
+        web._proby.clear()
+
+    def _plik_tokenu(self):
+        pliki = [f for f in self.g.pliki.values() if f.get("name") == mcp_serwer.PLIK_TOKENU]
+        return json.loads(pliki[0]["tresc"]) if pliki else None
+
+    def test_token_z_dysku_ma_pierwszenstwo_przed_wygasla_zmienna(self):
+        os.environ["GARMIN_TOKEN"] = web.szyfruj("token", "stary-odrzucony")
+        self.g.pliki["t"] = {"name": mcp_serwer.PLIK_TOKENU, "parents": ["root"],
+                             "tresc": json.dumps({"token": web.szyfruj("token", TOKEN_GARMIN)})}
+        w, tekst = self.narzedzie("kalendarz")
+        self.assertNotIn("isError", w, tekst)
+
+    def test_odswiezony_token_zapisuje_sie_na_dysku(self):
+        _WewnZmienny.token = "nowy-po-odswiezeniu"
+        self.narzedzie("kalendarz")
+        d = self._plik_tokenu()
+        self.assertEqual(web.odszyfruj("token", d["token"]), "nowy-po-odswiezeniu")
+        self.assertEqual(d["profil"], 135)
+        ile = len(self.g.pliki)
+        self.narzedzie("kalendarz")                              # ten sam token - bez ponownego zapisu
+        self.assertEqual(len(self.g.pliki), ile)
+
+    def test_wygasly_wszedzie_daje_czytelny_komunikat(self):
+        os.environ["GARMIN_TOKEN"] = web.szyfruj("token", "stary-odrzucony")
+        w, tekst = self.narzedzie("kalendarz")
+        self.assertTrue(w["isError"])
+        self.assertIn("zapisze się automatycznie", tekst)
+
+    def test_logowanie_wlasciciela_na_stronie_zapisuje_token(self):
+        r = self.c.post("/api/logowanie", json={"email": "a@b.c", "haslo": "dobre"}).get_json()
+        self.assertTrue(r["connector"]["zapisano"], r)
+        self.assertEqual(web.odszyfruj("token", self._plik_tokenu()["token"]), TOKEN_GARMIN)
+
+    def test_logowanie_obcego_konta_nie_zapisuje(self):
+        AtrapaWlasciciel.profil = 999
+        r = self.c.post("/api/logowanie", json={"email": "x@y.z", "haslo": "dobre"}).get_json()
+        self.assertEqual(r["stan"], "ok")
+        self.assertFalse(r["connector"]["zapisano"])
+        self.assertIsNone(self._plik_tokenu())
+        os.environ.pop("GARMIN_WLASCICIEL")
+        AtrapaWlasciciel.profil = 135
+        r = self.c.post("/api/logowanie", json={"email": "a@b.c", "haslo": "dobre"}).get_json()
+        self.assertFalse(r["connector"]["zapisano"])            # bez GARMIN_WLASCICIEL nic nie zapisujemy
 
 
 if __name__ == "__main__":

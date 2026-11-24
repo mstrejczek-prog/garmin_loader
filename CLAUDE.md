@@ -47,6 +47,7 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
   - `GARMIN_TOKEN` – zaszyfrowany token Garmina (strona → „Connector dla Claude”),
   - `USTAWIENIA` – opcjonalnie strefy/FTP (JSON w formacie `ustawienia.py`),
   - `KOD_DOSTEPU` – opcjonalny kod do strony,
+  - `GARMIN_WLASCICIEL` – profileId konta Garmin właściciela (logowanie na stronie zapisuje token dla connectora),
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN`, `DYSK_FOLDER_ID` / `DYSK_FOLDER`, `DYSK_ZAKRES` –
     Dysk Google dla FIT. Folder docelowy właściciela: „Obsidian Vault/Dane treningowe/FIT (surowe pliki z Garmina)”
     (ID w `DYSK_FOLDER_ID` na Render); pliki tam mają nazwy `<activity_id>.zip`.
@@ -65,9 +66,12 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 
 ## Znane ryzyka
 
-- **Rotacja refresh tokenu Garmina**: biblioteka może dostać nowy refresh token, a zmiennej
-  `GARMIN_TOKEN` nie da się nadpisać z kodu. Jeśli po uśpieniu serwera pojawia się „logowanie wygasło”,
-  plan B: trzymać token w małej bazie (np. darmowy Redis/Upstash) i zapisywać po odświeżeniu.
+- **Rotacja refresh tokenu Garmina** (potwierdzona 2026-11-24: po wielu restartach `GARMIN_TOKEN` z Render był
+  już unieważniony). Rozwiązanie: najnowszy token trzymany zaszyfrowany na Dysku Google właściciela
+  (`.garmin-plan-loader-token.json` w katalogu głównym, `mcp_serwer.PLIK_TOKENU`). Kolejność wczytywania: Dysk →
+  `GARMIN_TOKEN`. Po każdym wywołaniu, jeśli biblioteka odświeżyła token, zapis na Dysk. Logowanie na stronie
+  zapisuje token dla connectora **tylko** dla konta `GARMIN_WLASCICIEL` (profileId z socialProfile) - strona jest
+  publiczna, obce konta nie mogą podmienić konta connectora.
 - Darmowy Render usypia serwer po ~15 min; pierwsze wywołanie może przekroczyć czas.
 - Odpowiedzi Garmina są nieudokumentowane – pola w `garmin_dane.py` mogą wymagać poprawek;
   `trening` z `surowe=true` zwraca pełną odpowiedź do diagnozy.

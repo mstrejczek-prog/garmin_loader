@@ -753,17 +753,52 @@ def _id(x, opis: str) -> str:
     return s
 
 
-def serie(klient, activity_id) -> dict:
-    """Serie siłowe aktywności (ćwiczenie, powtórzenia, ciężar, czas) + podsumowanie per ćwiczenie i tonaż."""
+def _niepelna_nazwa(kat, naz) -> bool:
+    return not kat or str(kat).upper() == "UNKNOWN" or not naz or naz == kat
+
+
+def _uzupelnij_nazwy_z_planu(klient, aid: str, lista: list[dict]) -> str | None:
+    """Garmin czasem rozpoznaje tylko kategorię („PULL_UP”, „ROW”) albo „UNKNOWN”. Jeśli aktywność była
+    zrobiona z treningu z kalendarza, bierzemy nazwę ćwiczenia z kroku planu (przez wktStepIndex)."""
+    a = klient.get_activity(aid) or {}
+    wid = a.get("associatedWorkoutId") or g(a, "summaryDTO.associatedWorkoutId") or g(a, "metadataDTO.associatedWorkoutId")
+    if not wid:
+        return None
+    w = klient.get_workout_by_id(str(wid)) or {}
+    kroki, kolejnosc_fit = {}, []
+    for seg in w.get("workoutSegments") or []:
+        for k in _kroki(seg.get("workoutSteps"), "")[1]:
+            kroki[k["nr_kroku"]] = k
+        kolejnosc_fit += _indeksy_fit(seg.get("workoutSteps"))
+    mapy = {"stepOrder-1": lambda i: i + 1,
+            "fit": lambda i: kolejnosc_fit[i] if 0 <= i < len(kolejnosc_fit) else None}
+
+    def trafienia(f):
+        return sum(1 for x in lista if x["typ"] == "aktywna" and x["krok_planu"] is not None and x["_kat"]
+                   and (kroki.get(f(x["krok_planu"])) or {}).get("_kategoria") == x["_kat"])
+    f = mapy[max(mapy, key=lambda m: trafienia(mapy[m]))]
+    for x in lista:
+        if x["typ"] != "aktywna" or x["krok_planu"] is None or not _niepelna_nazwa(x["_kat"], x["_naz"]):
+            continue
+        k = kroki.get(f(x["krok_planu"]))
+        if k and k.get("cwiczenie"):
+            x["cwiczenie"] = k["cwiczenie"]
+            x["nazwa_z_planu"] = True
+    return str(wid)
+
+
+def serie(klient, activity_id, z_planu: bool = True) -> dict:
+    """Serie siłowe aktywności (ćwiczenie, powtórzenia, ciężar, czas) + podsumowanie per ćwiczenie i tonaż.
+    Niepełne nazwy ćwiczeń są uzupełniane z kroku planu (nazwa_z_planu=true), gdy trening był z kalendarza."""
     aid = _id(activity_id, "activity_id")
     dane = klient.get_activity_exercise_sets(aid) or {}
     surowe = dane.get("exerciseSets") if isinstance(dane, dict) else dane
-    lista, per = [], {}
+    lista = []
     for i, s in enumerate(surowe or [], 1):
         ex = (s.get("exercises") or [{}])
         ex = max(ex, key=lambda e: e.get("probability") or 0) if ex else {}
         aktywna = str(s.get("setType") or "").upper() == "ACTIVE"
-        wpis = {
+        lista.append({
             "nr": i,
             "typ": "aktywna" if aktywna else "przerwa",
             "cwiczenie": _cwiczenie(ex.get("category"), ex.get("name")) if aktywna else None,
@@ -772,26 +807,37 @@ def serie(klient, activity_id) -> dict:
             "czas_s": _r(s.get("duration"), 0),
             "start_utc": s.get("startTime"),
             "krok_planu": s.get("wktStepIndex"),
-        }
-        lista.append(wpis)
-        if aktywna:
-            p = per.setdefault(wpis["cwiczenie"] or "nieznane", {"serie": 0, "powtorzenia": 0, "ciezary": [], "tonaz_kg": 0.0})
-            p["serie"] += 1
-            p["powtorzenia"] += wpis["powtorzenia"] or 0
-            if wpis["ciezar_kg"]:
-                p["ciezary"].append(wpis["ciezar_kg"])
-                p["tonaz_kg"] += (wpis["powtorzenia"] or 0) * wpis["ciezar_kg"]
+            "_kat": ex.get("category"), "_naz": ex.get("name"),
+        })
+    workout_id = None
+    if z_planu and any(x["typ"] == "aktywna" and _niepelna_nazwa(x["_kat"], x["_naz"]) for x in lista):
+        try:
+            workout_id = _uzupelnij_nazwy_z_planu(klient, aid, lista)
+        except Exception:  # noqa: BLE001 - brak planu nie przekreśla serii
+            workout_id = None
+    per = {}
+    for x in lista:
+        x.pop("_kat"), x.pop("_naz")
+        if x["typ"] != "aktywna":
+            continue
+        p = per.setdefault(x["cwiczenie"] or "nieznane", {"serie": 0, "powtorzenia": 0, "ciezary": [], "tonaz_kg": 0.0})
+        p["serie"] += 1
+        p["powtorzenia"] += x["powtorzenia"] or 0
+        if x["ciezar_kg"]:
+            p["ciezary"].append(x["ciezar_kg"])
+            p["tonaz_kg"] += (x["powtorzenia"] or 0) * x["ciezar_kg"]
     cwiczenia = []
     for nazwa, p in per.items():
         c = p.pop("ciezary")
         cwiczenia.append({"cwiczenie": nazwa, **p, "tonaz_kg": round(p["tonaz_kg"], 1),
                           "ciezar_max_kg": max(c) if c else None,
                           "ciezar_sr_kg": round(sum(c) / len(c), 1) if c else None})
-    aktywne = [s for s in lista if s["typ"] == "aktywna"]
+    aktywne = [x for x in lista if x["typ"] == "aktywna"]
     return {
         "activity_id": int(aid),
+        "nazwy_uzupelnione_z_planu": workout_id is not None and any(x.get("nazwa_z_planu") for x in lista),
         "podsumowanie": {"serie_aktywne": len(aktywne),
-                         "powtorzenia": sum(s["powtorzenia"] or 0 for s in aktywne),
+                         "powtorzenia": sum(x["powtorzenia"] or 0 for x in aktywne),
                          "tonaz_kg": round(sum(c["tonaz_kg"] for c in cwiczenia), 1)},
         "cwiczenia": cwiczenia,
         "serie": lista,
@@ -936,7 +982,7 @@ def plan_vs_wykonanie(klient, activity_id) -> dict:
     wynik = {**naglowek, "workout_id": int(wid), "plan_nazwa": plan["nazwa"]}
 
     if "strength" in sport or (plan["sport"] or "").startswith("strength"):
-        sr = serie(klient, aid)
+        sr = serie(klient, aid, z_planu=False)
         aktywne = [x for x in sr["serie"] if x["typ"] == "aktywna"]
         po_order = {k["nr_kroku"]: k for k in plaskie}
         kolejnosc_fit = []

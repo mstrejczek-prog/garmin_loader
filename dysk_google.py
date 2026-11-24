@@ -214,3 +214,36 @@ def wyslij(refresh: str, nazwa: str, dane: bytes, mime: str = "application/zip",
     d = _zapytanie("POST", URL_UPLOAD, refresh, params={"uploadType": "multipart", "fields": "id,name,webViewLink"},
                    data=cialo, headers={"Content-Type": f"multipart/related; boundary={granica}"})
     return {"nazwa": nazwa, "status": "wgrany", "id": d.get("id"), "link": d.get("webViewLink")}
+
+
+# ----------------------------------------------------------------- małe pliki tekstowe (magazyn tokenu Garmina)
+
+def odczytaj_tekst(refresh: str, nazwa: str, rodzic: str = "root") -> str | None:
+    f = _znajdz(refresh, nazwa, rodzic)
+    if not f:
+        return None
+    try:
+        r = _http.request("GET", f"{URL_PLIKI}/{f['id']}", params={"alt": "media"}, timeout=30,
+                          headers={"Authorization": f"Bearer {_token_dostepu(refresh)}"})
+    except requests.RequestException as e:
+        raise BladDysku(f"Brak połączenia z Dyskiem Google: {e}") from e
+    if r.status_code >= 400:
+        raise BladDysku(f"Dysk Google zwrócił błąd {r.status_code}")
+    return r.text
+
+
+def zapisz_tekst(refresh: str, nazwa: str, tekst: str, rodzic: str = "root") -> str:
+    """Tworzy albo nadpisuje mały plik tekstowy; zwraca id pliku."""
+    f = _znajdz(refresh, nazwa, rodzic)
+    if f:
+        _zapytanie("PATCH", f"{URL_UPLOAD}/{f['id']}", refresh, params={"uploadType": "media"},
+                   data=tekst.encode(), headers={"Content-Type": "application/json"})
+        return f["id"]
+    granica = "garmin-plan-loader-granica"
+    meta = json.dumps({"name": nazwa, "parents": [rodzic], "mimeType": "application/json"}).encode()
+    cialo = (f"--{granica}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode() + meta +
+             f"\r\n--{granica}\r\nContent-Type: application/json\r\n\r\n".encode() + tekst.encode() +
+             f"\r\n--{granica}--\r\n".encode())
+    d = _zapytanie("POST", URL_UPLOAD, refresh, params={"uploadType": "multipart", "fields": "id"},
+                   data=cialo, headers={"Content-Type": f"multipart/related; boundary={granica}"})
+    return d.get("id")

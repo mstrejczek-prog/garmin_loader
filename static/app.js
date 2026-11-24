@@ -201,12 +201,20 @@ async function zaloguj(ev) {
     } else {
       ustawToken(odp.token, odp.konto, $("zapamietaj").checked);
       status("status-logowania", "");
+      infoConnector(odp.connector);
     }
   } catch (e) {
     status("status-logowania", e.message, "err");
   } finally {
     stan.zajety = false; odswiez();
   }
+}
+
+function infoConnector(c) {
+  if (!c) return;
+  if (c.zapisano) toast("Logowanie zapisane też dla Claude (connector) - nie trzeba nic zmieniać na serwerze.");
+  else if (c.powod && c.powod.indexOf("nie jest właścicielem") < 0)
+    toast("Connector dla Claude: " + c.powod + (c.profil ? " (profil " + c.profil + ")" : ""));
 }
 
 async function potwierdzMfa(ev) {
@@ -219,6 +227,7 @@ async function potwierdzMfa(ev) {
     const odp = await api("/api/mfa", { mfa: stan.mfa, kod });
     stan.mfa = null;
     ustawToken(odp.token, odp.konto, $("zapamietaj").checked);
+    infoConnector(odp.connector);
   } catch (e) {
     if (e.od_nowa) { stan.mfa = null; status("status-logowania", e.message, "err"); }
     else status("status-mfa", e.message, "err");

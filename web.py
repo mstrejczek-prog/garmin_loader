@@ -158,8 +158,13 @@ def _wpis_json(x: dict) -> dict:
 
 
 def _zalogowano(klient) -> dict:
-    return {"stan": "ok", "konto": garmin_io.nazwa_konta(klient),
-            "token": szyfruj("token", garmin_io.token(klient))}
+    wynik = {"stan": "ok", "konto": garmin_io.nazwa_konta(klient),
+             "token": szyfruj("token", garmin_io.token(klient))}
+    try:
+        wynik["connector"] = mcp_serwer.zapisz_logowanie_wlasciciela(klient)
+    except Exception:  # noqa: BLE001 - zapis dla connectora nie może zepsuć logowania na stronie
+        log.exception("zapis logowania dla connectora")
+    return wynik
 
 
 # ----------------------------------------------------------------- strona
