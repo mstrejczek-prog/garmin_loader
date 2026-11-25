@@ -192,6 +192,8 @@ class TestMcp(BazaMcp):
         d = DZIS + datetime.timedelta(days=2)
         k.kalendarz = {(d.year, d.month): [{"id": 9, "workoutId": 11, "title": "T1", "date": d.isoformat(),
                                             "itemType": "workout"},
+                                           {"id": 9, "workoutId": 11, "title": "T1", "date": d.isoformat(),
+                                            "itemType": "workout"},
                                            {"id": 10, "title": "Bieg", "date": d.isoformat(), "itemType": "activity"}]}
         wynik = garmin_dane.kalendarz(k, DZIS.isoformat(), (DZIS + datetime.timedelta(days=5)).isoformat())
         self.assertEqual(wynik, [{"data": d.isoformat(), "nazwa": "T1", "workout_id": 11, "wpis_id": 9}])

@@ -577,8 +577,15 @@ def kalendarz(klient, od=None, do=None) -> list[dict]:
                 "wpis_id": it.get("id") or it.get("scheduledWorkoutId"),
                 "czas_min": _min(it.get("duration") or it.get("estimatedDurationInSecs")),
             }))
-    wynik.sort(key=lambda x: x["data"])
-    return wynik
+    # Garmin potrafi zwrócić ten sam wpis kalendarza dwa razy (np. w odpowiedzi dla dwóch miesięcy)
+    unikalne, widziane = [], set()
+    for x in wynik:
+        klucz = x.get("wpis_id") or (x["data"], x.get("nazwa"), x.get("workout_id"))
+        if klucz not in widziane:
+            widziane.add(klucz)
+            unikalne.append(x)
+    unikalne.sort(key=lambda x: x["data"])
+    return unikalne
 
 
 # ----------------------------------------------------------------- wellness i gotowość
