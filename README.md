@@ -225,6 +225,89 @@ Uwagi:
 - Dane czytane są tą samą nieoficjalną biblioteką co wysyłka; Garmin ogranicza liczbę zapytań,
   dlatego zakresy dat są limitowane (aktywności do 92 dni, wellness do 14 dni).
 
+## Waga Xiaomi → Garmin + arkusz (łącznik wagi)
+
+Pomiary z wagi **Xiaomi Mi Body Composition Scale 2** (XMTZC05HM) trafiają z chmury **Zepp Life** do
+**Garmin Connect** (skład ciała) i do arkusza Google **„Pomiary”**, zakładka **„Waga”**. Program jest
+nieoficjalny – korzysta z nieudokumentowanego API Zepp (protokół ustalony na podstawie kodu
+SmartScaleConnect i huami-token, bez używania tych programów).
+
+### Jak działa
+
+GitHub Actions (`.github/workflows/waga.yml`) co 3 h wywołuje `POST /waga/sync` na serwerze Plan Loadera.
+Serwer:
+
+1. pobiera z Zepp rekordy od ostatniego przesłanego pomiaru **minus 24 h** (zapisanym tokenem; bez logowania hasłem),
+2. zostawia tylko Twój profil i masę w zakresie `WAGA_MIN`–`WAGA_MAX` (reszta trafia tylko do backupu),
+3. wysyła do Garmina (`add_body_composition`, czas pomiaru z Zepp; pomija pomiar, który Garmin już ma:
+   czas ±60 s i masa ±0,05 kg; ~1 s przerwy między wysyłkami),
+4. dopisuje wiersze do zakładki „Waga” (pomija wiersze o tej samej dacie, godzinie i masie).
+
+Skład ciała jest brany z Zepp **bez przeliczeń**. Pomiar bez impedancji (np. w skarpetach) → tylko masa i BMI,
+pola składu puste. W arkuszu: data `RRRR-MM-DD`, godzina `GG:MM` (Europe/Warsaw), liczby jako liczby (z kropką),
+brak wartości = pusta komórka, „Źródło” = `Zepp → łącznik`. Nagłówki w wierszu 1 nie są zmieniane – gdy się nie
+zgadzają, łącznik niczego nie zapisuje i kończy się błędem.
+
+Garmin: ten sam token co connector (najnowszy, zaszyfrowany na Dysku Google), więc łącznik i connector nie
+unieważniają sobie nawzajem tokenu. Arkusz: to samo połączenie z Google co Dysk (zakres `drive` obejmuje Sheets).
+
+**Stan** (tokeny Zepp, czas ostatniego pomiaru, raport, licznik awaryjnych logowań) i **backup** wszystkich
+rekordów (CSV) leżą na Twoim Dysku Google jako `.waga-sync-stan.json` i `.waga-sync-backup.json`,
+zaszyfrowane `SECRET_KEY` (Fernet). Repo jest publiczne, dlatego log i podsumowanie workflow zawierają tylko
+liczby, daty partii i kody błędów – masa i skład ciała są widoczne wyłącznie w narzędziu MCP **`waga`**
+(„pokaż raport wagi”, „pomiary wagi z listopada”).
+
+### Tryby (ręcznie: Actions → „Waga” → Run workflow)
+
+| tryb | co robi |
+|---|---|
+| `test` | tylko odczyt z Zepp (ostatnie 30 dni) i z Garmina. Pierwsze uruchomienie loguje się do Zepp hasłem (krok 0). |
+| `historia` | cała historia z Zepp → zaszyfrowany backup + raport (liczba pomiarów, zakres dat, min/max masy, skoki > 2 kg dzień do dnia). Bez wysyłki. |
+| `wyslij_historie` | wysyłka historii do Garmina i arkusza rosnąco po dacie, partiami po `WAGA_PARTIA` (workflow sam woła kolejne partie). |
+| `sync` | nowe pomiary. Działa dopiero po `wyslij_historie`. Harmonogram włącza zmienna repo `WAGA_CRON=tak`. |
+
+Błąd = jeden fail workflow (GitHub wysyła e-mail). Nie ma ponowień w pętli. Każde **awaryjne logowanie hasłem**
+do Zepp jest oznaczone ostrzeżeniem w podsumowaniu workflow.
+
+### Konfiguracja
+
+Render → `garmin-plan-loader` → Environment:
+
+| zmienna | |
+|---|---|
+| `ZEPP_EMAIL`, `ZEPP_PASSWORD` | konto **Xiaomi**, którym logujesz się w Zepp Life |
+| `WAGA_TOKEN` | długi losowy tekst (ten sam w sekrecie GitHub) |
+| `WAGA_MIN`, `WAGA_MAX` | zakres masy Twojego profilu, np. `65` i `85` |
+| `WAGA_ARKUSZ_ID` | opcjonalnie; domyślnie arkusz „Pomiary” właściciela |
+| `WAGA_PARTIA` | opcjonalnie; pomiarów na jedno wywołanie przy wysyłce historii (domyślnie 25) |
+| `WAGA_PROFIL` | opcjonalnie; dodatkowe `memberId` uznawane za Twój profil (gdy raport pokazuje „inny_profil” dla Twoich pomiarów) |
+
+Wymagane też: połączony Dysk Google (`GOOGLE_*`) i token Garmina connectora. W Google Cloud Console projektu
+klienta OAuth musi być włączone **Google Sheets API** (APIs & Services → Library → Google Sheets API → Enable).
+
+GitHub → Settings → Secrets and variables → Actions: sekret `WAGA_TOKEN`; zmienna `WAGA_CRON` = `tak`
+(dopiero po wysłaniu historii); opcjonalnie `WAGA_URL`.
+
+### Tokeny
+
+- **Zepp**: logowanie hasłem tylko raz (tryb `test`), potem odświeżanie tokenu z `login_token`, bez wylogowania.
+  Hasło jest używane awaryjnie tylko wtedy, gdy Zepp odrzuci token i jego odświeżenie (najwyżej raz na przebieg).
+- **Garmin**: nic do odnawiania ręcznie, dopóki działa connector – biblioteka odświeża token, a najnowszy zapisuje
+  się na Dysku. Gdy Garmin unieważni logowanie (zmiana hasła, długa przerwa, zwykle raz na kilka miesięcy do roku),
+  workflow skończy się błędem `garmin`: zaloguj się na stronie Plan Loadera (z MFA) kontem właściciela – nowy token
+  zapisze się sam.
+
+### Znane ograniczenia
+
+- API Zepp jest nieoficjalne i może się zmienić; Zepp/Xiaomi może blokować adresy serwerów (błąd `zepp_blokada`),
+  żądać captchy (`zepp_captcha`) albo weryfikacji konta (`zepp_weryfikacja`).
+- Według autora SmartScaleConnect synchronizacja może **wylogować Zepp Life na telefonie**. Łącznik ogranicza to
+  do jednego logowania (patrz „Tokeny”), ale wynik zależy od Zepp – sprawdzone w kroku 0 (`docs/wykonanie-waga.md`).
+- Darmowy Render zasypia – pierwsze wywołanie budzi serwer (do ~1 min). GitHub wyłącza harmonogram w publicznym
+  repo po 60 dniach bez commitów – wtedy wystarczy go włączyć w zakładce Actions.
+- Garmin nie deduplikuje sam – łącznik porównuje czas i masę; pomiar wpisany ręcznie w Garminie o innej
+  godzinie zostanie zdublowany.
+
 ## Prywatność i bezpieczeństwo
 
 - Hasło jest wysyłane do serwera tylko w chwili logowania, przekazywane do Garmina i **nigdzie nie zapisywane**.

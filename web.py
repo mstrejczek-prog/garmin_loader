@@ -38,6 +38,7 @@ import garmin_io
 import mcp_serwer
 import plan
 import ustawienia
+import waga
 
 NAZWA = "Garmin Plan Loader"
 WERSJA = "0.3.0"
@@ -332,6 +333,7 @@ def api_wyslij():
 
 
 mcp_serwer.zarejestruj(app, odszyfruj, szyfruj)          # connector dla Claude: POST /mcp
+waga.zarejestruj(app)                                   # łącznik wagi: POST /waga/<tryb> (GitHub Actions)
 
 
 if __name__ == "__main__":

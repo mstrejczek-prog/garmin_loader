@@ -1,0 +1,64 @@
+name: Waga (Zepp -> Garmin + arkusz)
+
+# Uruchamia łącznik wagi na serwerze Plan Loadera (Render): POST /waga/<tryb>.
+# Repo jest publiczne - w logu i podsumowaniu są tylko liczby i kody błędów (bez masy i składu ciała).
+# Sekret: WAGA_TOKEN. Zmienna repo WAGA_CRON=tak włącza harmonogram (krok 4).
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      tryb:
+        description: "test = tylko odczyt; historia = backup + raport; wyslij_historie = wysyłka historii; sync = nowe pomiary"
+        type: choice
+        options: [test, historia, wyslij_historie, sync]
+        default: test
+
+permissions:
+  contents: read
+
+concurrency:
+  group: waga
+  cancel-in-progress: false
+
+jobs:
+  waga:
+    if: github.event_name != 'schedule' || vars.WAGA_CRON == 'tak'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TRYB: ${{ inputs.tryb || 'sync' }}
+      URL: ${{ vars.WAGA_URL || 'https://garmin-plan-loader.onrender.com' }}
+      WAGA_TOKEN: ${{ secrets.WAGA_TOKEN }}
+    steps:
+      - name: Przebieg
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ -z "$WAGA_TOKEN" ]; then echo "::error::Brak sekretu WAGA_TOKEN"; exit 1; fi
+          podsumuj() {
+            jq -r '"| pole | wartość |\n|---|---|",
+              (paths(scalars) as $p | select(($p|map(tostring)|join(".")) | test("^(ok|tryb|czas_s|kategoria|blad|pominieto|uwaga|pomiarow|odrzuconych|przyjetych|skokow_ponad_2kg|w_partii|pozostalo|pomiarow_30_dni|rekordow|logowanie_haslem|kroki\\.[0-9]+|zepp\\..*|garmin\\..*|arkusz\\..*)$"))
+               | "| \($p|map(tostring)|join(".")) | \(getpath($p)) |")' odp.json 2>/dev/null \
+              | grep -v 'ostatni_pomiar' >> "$GITHUB_STEP_SUMMARY" || echo "(odpowiedź nie jest JSON-em)" >> "$GITHUB_STEP_SUMMARY"
+          }
+          partii=0
+          while :; do
+            partii=$((partii + 1))
+            kod=$(curl -sS -o odp.json -w '%{http_code}' --max-time 290 -X POST \
+                  -H "Authorization: Bearer $WAGA_TOKEN" "$URL/waga/$TRYB") || kod="000"
+            echo "### Waga: $TRYB (wywołanie $partii, HTTP $kod)" >> "$GITHUB_STEP_SUMMARY"
+            podsumuj
+            if [ "$(jq -r '.zepp.logowanie_haslem // empty' odp.json 2>/dev/null)" = "awaryjne" ]; then
+              echo "::warning::Użyto awaryjnego logowania hasłem do Zepp - sprawdź, czy Zepp Life na telefonie jest zalogowany."
+              echo "**Uwaga: awaryjne logowanie hasłem do Zepp.**" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            if [ "$kod" != "200" ]; then
+              echo "::error::Łącznik wagi: HTTP $kod, $(jq -r '(.kategoria // "?") + ": " + (.blad // "brak opisu")' odp.json 2>/dev/null || echo 'brak odpowiedzi')"
+              exit 1
+            fi
+            # wysyłka historii idzie partiami (limit czasu żądania na serwerze); każda partia to jedno wywołanie
+            pozostalo=$(jq -r '.pozostalo // 0' odp.json)
+            if [ "$TRYB" != "wyslij_historie" ] || [ "$pozostalo" = "0" ] || [ "$partii" -ge 80 ]; then break; fi
+          done

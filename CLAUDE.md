@@ -16,6 +16,8 @@ Wcześniejszy projekt FIT_ANALYZER (analiza FIT + czat) jest przenoszony tutaj i
 | `plan.py` | Format planu (JSON po polsku) → JSON treningu Garmin, podgląd, prompt dla AI |
 | `ustawienia.py` | Strefy tętna (S1–S5), mocy (P1–P5), FTP |
 | `cwiczenia.py` | Katalog ćwiczeń siłowych Garmin |
+| `zepp.py` | Zepp Life (nieoficjalne API): logowanie kontem Xiaomi, odświeżanie app_token z login_token, rekordy wagi |
+| `waga.py` | Łącznik wagi: `POST /waga/<tryb>` (wołane z `.github/workflows/waga.yml`), filtry, deduplikacja, Garmin + arkusz „Pomiary/Waga”, stan i backup zaszyfrowane na Dysku, narzędzie MCP `waga` |
 | `static/` | Frontend (bez zewnętrznych skryptów, CSP `self`) |
 | `tests/` | unittest/pytest na atrapach Garmina (bez sieci) |
 
@@ -30,7 +32,7 @@ Cały dostęp do Garmina idzie **jedną nieoficjalną biblioteką `garminconnect
 podpisane linki `/fit/<token>`, 1 h), `polacz_dysk_google` (link → `/google/polacz/<token>` → Google →
 `/google/powrot` pokazuje zaszyfrowany `GOOGLE_TOKEN` do wpisania w Render), `stan_dysku` (duplikaty, braki
 vs Garmin, `uzupelnij`), `wellness` (do 92 dni, `pola`), `gotowosc`, `strumienie`, `sklad_ciala`,
-`historia_metryk`, `sprzet`, `rekordy`, `prognozy`, `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
+`historia_metryk`, `sprzet`, `rekordy`, `prognozy`, `waga` (łącznik wagi, w `waga.py`), `surowe_dane` (diagnostyka, lista źródeł w `ZRODLA_SUROWE`). Zasada: plan najpierw `sprawdz_plan` → podgląd →
 akceptacja użytkownika → `wyslij_plan`. Błędy narzędzi zwracamy jako `isError` z polskim komunikatem.
 Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests/test_mcp.py`.
 
@@ -76,6 +78,10 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 - Odpowiedzi Garmina są nieudokumentowane – pola w `garmin_dane.py` mogą wymagać poprawek;
   `trening` z `surowe=true` zwraca pełną odpowiedź do diagnozy.
 - Limity zapytań Garmina (429) – stąd limity zakresów: aktywności 92 dni, wellness 14 dni.
+- **Łącznik wagi / Zepp**: synchronizacja może wylogować Zepp Life na telefonie (wg SmartScaleConnect) - dlatego
+  hasło tylko raz (tryb `test`), potem odświeżanie tokenu; nigdy nie wołać wylogowania. Endpointy Zepp w `zepp.py`
+  są z kodu referencyjnego - do potwierdzenia na żywym API (`docs/wykonanie-waga.md`). Publiczne repo: odpowiedzi
+  `/waga/*` i podsumowania workflow bez masy/składu ciała (pełne dane tylko w MCP `waga`).
 
 ## Plan prac
 
@@ -87,6 +93,7 @@ Nowe narzędzie = wpis w słowniku `NARZEDZIA` w `mcp_serwer.py` + test w `tests
 - [x] Specyfikacja 2026-11-23, P2 (2026-11-23): rozszerzony `trening`, `strumienie`, `sklad_ciala`, `historia_metryk`,
       `wellness` do 92 dni. Zweryfikowane na żywym API (bieg 24559234030, basen 25124549994, rok historii).
 - [x] Specyfikacja 2026-11-23, P3 (2026-11-23): `sprzet`, `rekordy` (mapowanie typeId w `TYPY_REKORDOW`), `prognozy`.
+- [x] Łącznik wagi Xiaomi/Zepp -> Garmin + arkusz (2026-11-26, kod i testy; kroki 0-4 wg `docs/wykonanie-waga.md`).
 - [ ] Etap 2: `analiza_treningu` z pliku FIT (NP, TSS, IF, decoupling, krzywa mocy – kod w
       FIT_ANALYZER `ingest_fit.py`) i `obciazenie` (CTL/ATL/TSB).
 - [ ] Etap 3: README, archiwizacja repo FIT_ANALYZER (robi właściciel w ustawieniach GitHub).
