@@ -434,6 +434,13 @@ def _stare_konto() -> dict | None:
     return stan
 
 
+def _po_latach(pomiary: list[dict]) -> dict:
+    wynik: dict[str, int] = {}
+    for p in pomiary:
+        wynik[p["data"][:4]] = wynik.get(p["data"][:4], 0) + 1
+    return wynik
+
+
 def tryb_historia(refresh: str, stan: dict) -> dict:
     lo, hi = zakres_masy()
     surowe, info = _pobierz_z_zepp(stan, 0)
@@ -455,6 +462,8 @@ def tryb_historia(refresh: str, stan: dict) -> dict:
     r = stan["historia"]["raport"]
     return {"zepp": info, "pomiarow": r.get("pomiarow", 0), "odrzuconych": r.get("odrzuconych", 0),
             "od": r.get("od"), "do": r.get("do"), "skokow_ponad_2kg": len(r.get("skoki_ponad_2kg_dzien_do_dnia") or []),
+            "odrzucone_powody": r.get("odrzucone_powody") or {},
+            "lata": {rok: n for rok, n in sorted(_po_latach(ok).items())},
             "raport": "pełny raport (z masą) pokazuje narzędzie MCP `waga` w czacie z Claude"}
 
 

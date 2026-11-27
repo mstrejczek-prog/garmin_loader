@@ -52,7 +52,7 @@ jobs:
             podsumuj
             echo "::notice::Zepp: kroki=$(jq -c '.zepp.kroki // []' odp.json 2>/dev/null), host=$(jq -r '.zepp.host // "-"' odp.json 2>/dev/null), rekordow=$(jq -r '.zepp.rekordow // "-"' odp.json 2>/dev/null), stare_konto=$(jq -r '.zepp.stare_konto_rekordow // "-"' odp.json 2>/dev/null), pomiarow_30d=$(jq -r '.zepp.pomiarow_30_dni // "-"' odp.json 2>/dev/null), ttl_s=$(jq -r '.zepp.app_ttl_s // "?"' odp.json 2>/dev/null), diagnoza=$(jq -c '.zepp.diagnoza // []' odp.json 2>/dev/null)"
             if [ "$TRYB" = "historia" ] || [ "$TRYB" = "wyslij_historie" ] || [ "$TRYB" = "sync" ]; then
-              echo "::notice::Wynik: $(jq -c '{pomiarow, odrzuconych, przyjetych, od, do, skokow_ponad_2kg, w_partii, pozostalo, partia_od, partia_do, garmin, arkusz} | with_entries(select(.value != null))' odp.json 2>/dev/null)"
+              echo "::notice::Wynik: $(jq -c '{pomiarow, odrzuconych, odrzucone_powody, lata, przyjetych, od, do, skokow_ponad_2kg, w_partii, pozostalo, partia_od, partia_do, garmin, arkusz} | with_entries(select(.value != null))' odp.json 2>/dev/null)"
             fi
             if [ "$(jq -r '.zepp.logowanie_haslem // empty' odp.json 2>/dev/null)" = "awaryjne" ]; then
               echo "::warning::Użyto awaryjnego logowania hasłem do Zepp - sprawdź, czy Zepp Life na telefonie jest zalogowany."
