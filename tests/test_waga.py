@@ -181,6 +181,18 @@ class TestPrzebiegi(Baza):
         self.assertEqual(len(self.dysk.arkusz), 1)
         self.assertNotIn("75", json.dumps(d))          # bez masy w odpowiedzi (publiczny log)
 
+    def test_drugi_test_bez_hasla(self):
+        flagi = []
+        stary = zepp.rekordy_z_sesja
+
+        def lapacz(stan, email, haslo, od_czasu=0, pozwol_haslo=True):
+            flagi.append(pozwol_haslo)
+            return stary(stan, email, haslo, od_czasu, pozwol_haslo)
+        with mock.patch.object(zepp, "rekordy_z_sesja", lapacz):
+            self.post("test")
+            self.post("test")
+        self.assertEqual(flagi, [True, False])
+
     def test_cala_sciezka_bez_duplikatow_i_poza_zakresem_tylko_backup(self):
         self.zepp_rekordy = [rekord(T0, 75.0), rekord(T0 + 86400, 50.0), rekord(T0 + 2 * 86400, 75.4, imp=0)]
         self.assertEqual(self.post("test")[0], 200)

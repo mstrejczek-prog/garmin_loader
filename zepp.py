@@ -246,6 +246,7 @@ def _stan_tokenow(ti: dict, device_id: str, poprzedni: dict | None = None) -> di
     if ti.get("login_token"):
         stan["login_token"] = ti["login_token"]
     ttl = ti.get("app_ttl")
+    stan["app_ttl"] = ttl if isinstance(ttl, (int, float)) else None
     stan["app_token_do"] = teraz + int(ttl) if isinstance(ttl, (int, float)) and ttl > 0 else None
     return stan
 
@@ -315,6 +316,13 @@ def rekordy(stan: dict, od_czasu: int = 0) -> list[dict]:
 
 # ----------------------------------------------------------------- sesja: token -> odświeżenie -> hasło
 
+DIAGNOZA: list[str] = []                            # kroki, które zawiodły (kody HTTP, bez danych) - ostatni przebieg
+
+
+def _diag(tekst: str) -> None:
+    DIAGNOZA.append(tekst[:120])
+
+
 def polacz(stan: dict | None, email: str, haslo: str, pozwol_haslo: bool = True) -> tuple[dict, str]:
     """Ważny stan tokenów i sposób, w jaki go zdobyto: 'token', 'odswiezenie' albo 'haslo'.
     Każda ścieżka jest próbowana najwyżej raz (bez pętli ponowień)."""
@@ -322,9 +330,11 @@ def polacz(stan: dict | None, email: str, haslo: str, pozwol_haslo: bool = True)
     if stan.get("app_token") and stan.get("user_id"):
         if not token_wygasa(stan):
             return stan, "token"
+        _diag(f"token wygasa wg ttl (app_token_do-teraz={int(stan['app_token_do'] - time.time())} s)")
         try:
             return odswiez(stan), "odswiezenie"
         except BladZepp as e:
+            _diag("odswiezenie: " + e.opis)
             if e.kategoria not in ("token",):
                 raise
     if not pozwol_haslo:
@@ -336,11 +346,13 @@ def rekordy_z_sesja(stan: dict | None, email: str, haslo: str, od_czasu: int = 0
                     pozwol_haslo: bool = True) -> tuple[list[dict], dict, list[str]]:
     """Pobiera rekordy; przy 401 jedno odświeżenie, a gdy i ono zawiedzie - jedno awaryjne logowanie hasłem.
     Zwraca (rekordy, nowy_stan, kroki) - kroki: lista użytych metod, np. ['token', 'odswiezenie']."""
+    DIAGNOZA.clear()
     stan, sposob = polacz(stan, email, haslo, pozwol_haslo)
     kroki = [sposob]
     try:
         return rekordy(stan, od_czasu), stan, kroki
     except BladZepp as e:
+        _diag(f"rekordy po '{sposob}': " + e.opis)
         if e.kategoria != "token":
             raise
     if sposob == "token":
@@ -349,6 +361,7 @@ def rekordy_z_sesja(stan: dict | None, email: str, haslo: str, od_czasu: int = 0
             kroki.append("odswiezenie")
             return rekordy(stan, od_czasu), stan, kroki
         except BladZepp as e:
+            _diag("odswiezenie po 401: " + e.opis)
             if e.kategoria != "token":
                 raise
     if sposob == "haslo" or not pozwol_haslo:

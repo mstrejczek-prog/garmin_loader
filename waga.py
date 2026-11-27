@@ -383,9 +383,15 @@ def _teraz() -> str:
 def _pobierz_z_zepp(stan: dict, od_czasu: int, pozwol_haslo: bool = True) -> tuple[list[dict], dict]:
     email, haslo = os.environ.get("ZEPP_EMAIL", "").strip(), os.environ.get("ZEPP_PASSWORD", "")
     mial_token = bool((stan.get("zepp") or {}).get("app_token"))
-    surowe, tokeny, kroki = zepp.rekordy_z_sesja(stan.get("zepp"), email, haslo, od_czasu, pozwol_haslo)
+    try:
+        surowe, tokeny, kroki = zepp.rekordy_z_sesja(stan.get("zepp"), email, haslo, od_czasu, pozwol_haslo)
+    except zepp.BladZepp as e:
+        if zepp.DIAGNOZA:
+            raise zepp.BladZepp(e.kategoria, e.opis + " | diagnoza: " + "; ".join(zepp.DIAGNOZA)) from None
+        raise
     stan["zepp"] = tokeny
-    info = {"kroki": kroki, "rekordow": len(surowe), "logowanie_haslem": None}
+    info = {"kroki": kroki, "rekordow": len(surowe), "logowanie_haslem": None,
+            "diagnoza": list(zepp.DIAGNOZA), "app_ttl_s": tokeny.get("app_ttl")}
     if "haslo" in kroki:
         info["logowanie_haslem"] = "awaryjne" if mial_token else "pierwsze"
         stan.setdefault("logowania_haslem", []).append({"kiedy": _teraz(), "rodzaj": info["logowanie_haslem"]})
@@ -400,7 +406,8 @@ def _wyslij(refresh: str, pomiary: list[dict]) -> dict:
 
 def tryb_test(refresh: str, stan: dict) -> dict:
     od = int(time.time()) - 30 * 86400
-    surowe, info = _pobierz_z_zepp(stan, od)
+    pierwsze = not (stan.get("zepp") or {}).get("app_token")
+    surowe, info = _pobierz_z_zepp(stan, od, pozwol_haslo=pierwsze)   # test: hasło tylko przy pierwszym logowaniu
     zapisz_stan(refresh, stan)                      # tokeny po pierwszym logowaniu
     pomiary = z_rekordow(surowe)
     dzis = dt.date.today()
