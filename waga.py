@@ -383,6 +383,8 @@ def _teraz() -> str:
 def _pobierz_z_zepp(stan: dict, od_czasu: int, pozwol_haslo: bool = True) -> tuple[list[dict], dict]:
     email, haslo = os.environ.get("ZEPP_EMAIL", "").strip(), os.environ.get("ZEPP_PASSWORD", "")
     mial_token = bool((stan.get("zepp") or {}).get("app_token"))
+    if (h := os.environ.get("ZEPP_HOST", "").strip()) and stan.get("zepp"):
+        stan["zepp"]["host_api"] = h
     try:
         surowe, tokeny, kroki = zepp.rekordy_z_sesja(stan.get("zepp"), email, haslo, od_czasu, pozwol_haslo)
     except zepp.BladZepp as e:
@@ -390,7 +392,7 @@ def _pobierz_z_zepp(stan: dict, od_czasu: int, pozwol_haslo: bool = True) -> tup
             raise zepp.BladZepp(e.kategoria, e.opis + " | diagnoza: " + "; ".join(zepp.DIAGNOZA)) from None
         raise
     stan["zepp"] = tokeny
-    info = {"kroki": kroki, "rekordow": len(surowe), "logowanie_haslem": None,
+    info = {"kroki": kroki, "rekordow": len(surowe), "logowanie_haslem": None, "host": tokeny.get("host_api"),
             "diagnoza": list(zepp.DIAGNOZA), "app_ttl_s": tokeny.get("app_ttl")}
     if "haslo" in kroki:
         info["logowanie_haslem"] = "awaryjne" if mial_token else "pierwsze"

@@ -165,7 +165,7 @@ def _host_api(d: dict) -> str | None:
     for dom in d.get("domains") or []:
         if not isinstance(dom, dict):
             continue
-        for h in [dom.get("host")] + list(dom.get("cnames") or []):
+        for h in list(dom.get("cnames") or []) + [dom.get("host")]:      # najpierw regionalny (np. -de2)
             if isinstance(h, str) and h.startswith("api-mifit") and "." in h:
                 return h
     return None
@@ -206,6 +206,7 @@ def zaloguj_email(email: str, haslo: str, device_id: str) -> dict:
     stan["konto"] = "email"
     if (host := _host_api(d)):
         stan["host_api"] = host
+        stan["host_regionalny"] = host
     return stan
 
 
@@ -235,6 +236,7 @@ def zaloguj_haslem(email: str, haslo: str, device_id: str | None = None, konto: 
     stan["konto"] = "xiaomi"
     if (host := _host_api(d)):
         stan["host_api"] = host
+        stan["host_regionalny"] = host
     return stan
 
 
@@ -283,8 +285,11 @@ def token_wygasa(stan: dict, zapas_s: int = 24 * 3600) -> bool:
 
 def _strona_rekordow(stan: dict, do_czasu: int) -> dict:
     url = URL_REKORDY.format(uid=stan["user_id"])
-    if stan.get("host_api"):
-        url = url.replace("api-mifit.zepp.com", stan["host_api"], 1)
+    host = stan.get("host_api")
+    if host in ("api-mifit.huami.com", "api-mifit.zepp.com") and stan.get("host_regionalny"):
+        host = stan["host_regionalny"]
+    if host:
+        url = url.replace("api-mifit.zepp.com", host, 1)
     r = _zapytanie("GET", url, params={"limit": 200, "toTime": do_czasu},
                    headers={"apptoken": stan["app_token"], "appname": APP_NAME, "User-Agent": UA})
     if r.status_code == 401:

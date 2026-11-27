@@ -50,7 +50,7 @@ jobs:
                   -H "Authorization: Bearer $WAGA_TOKEN" "$URL/waga/$TRYB") || kod="000"
             echo "### Waga: $TRYB (wywołanie $partii, HTTP $kod)" >> "$GITHUB_STEP_SUMMARY"
             podsumuj
-            echo "::notice::Zepp: kroki=$(jq -c '.zepp.kroki // []' odp.json 2>/dev/null), ttl_s=$(jq -r '.zepp.app_ttl_s // "?"' odp.json 2>/dev/null), diagnoza=$(jq -c '.zepp.diagnoza // []' odp.json 2>/dev/null)"
+            echo "::notice::Zepp: kroki=$(jq -c '.zepp.kroki // []' odp.json 2>/dev/null), host=$(jq -r '.zepp.host // "-"' odp.json 2>/dev/null), rekordow=$(jq -r '.zepp.rekordow // "-"' odp.json 2>/dev/null), stare_konto=$(jq -r '.zepp.stare_konto_rekordow // "-"' odp.json 2>/dev/null), pomiarow_30d=$(jq -r '.zepp.pomiarow_30_dni // "-"' odp.json 2>/dev/null), ttl_s=$(jq -r '.zepp.app_ttl_s // "?"' odp.json 2>/dev/null), diagnoza=$(jq -c '.zepp.diagnoza // []' odp.json 2>/dev/null)"
             if [ "$(jq -r '.zepp.logowanie_haslem // empty' odp.json 2>/dev/null)" = "awaryjne" ]; then
               echo "::warning::Użyto awaryjnego logowania hasłem do Zepp - sprawdź, czy Zepp Life na telefonie jest zalogowany."
               echo "**Uwaga: awaryjne logowanie hasłem do Zepp.**" >> "$GITHUB_STEP_SUMMARY"

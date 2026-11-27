@@ -369,7 +369,7 @@ class TestZepp(unittest.TestCase):
         with mock.patch.object(zepp, "_http", h):
             stan = zepp.zaloguj_haslem("e@x", HASLO)                       # domyślnie konto e-mail
         self.assertEqual((stan["konto"], stan["app_token"], stan["login_token"], stan["host_api"]),
-                         ("email", "A3", "L3", "api-mifit.zepp.com"))
+                         ("email", "A3", "L3", "api-mifit-de2.zepp.com"))
         wyslane = h.wywolania[0][2]["data"]
         self.assertIsInstance(wyslane, bytes)
         self.assertNotIn(HASLO.encode(), wyslane)                           # formularz zaszyfrowany

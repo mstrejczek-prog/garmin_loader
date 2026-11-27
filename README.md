@@ -277,6 +277,8 @@ Render → `garmin-plan-loader` → Environment:
 |---|---|
 | `ZEPP_EMAIL`, `ZEPP_PASSWORD` | konto Zepp Life z **e-mailem i hasłem** (konta założonego przez Google nie da się zalogować automatycznie) |
 | `ZEPP_KONTO` | `email` (domyślnie: konto Zepp/Amazfit z e-mailem) albo `xiaomi` (konto Xiaomi) |
+| `ZEPP_HOST` | opcjonalnie: host API danych Zepp (np. `api-mifit-de2.zepp.com`), gdy domyślny nie zwraca pomiarów |
+| `ZEPP_STARE_HOST` | host starego konta z ciasteczka `domains` (cname przy `api-mifit…`), np. `api-mifit-de2.zepp.com` |
 | `ZEPP_STARE_APPTOKEN`, `ZEPP_STARE_USER_ID` | opcjonalnie, jednorazowo: token i id starego konta (np. logowanego przez Google) z przeglądarki – tryb `historia` doczyta z niego starą historię (tylko odczyt); potem usuń |
 | `WAGA_TOKEN` | długi losowy tekst (ten sam w sekrecie GitHub) |
 | `WAGA_MIN`, `WAGA_MAX` | zakres masy Twojego profilu, np. `65` i `85` |
