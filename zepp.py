@@ -15,6 +15,15 @@ i argrento/huami-token - tylko jako dokumentacja, bez użycia tych programów:
 4. Rekordy: GET api-mifit.zepp.com/users/{user_id}/members/-1/weightRecords?limit=200&toTime=<unix>
    (nagłówek apptoken; -1 = główny profil konta; stronicowanie polem next).
 
+Konto Zepp z e-mailem i hasłem (ZEPP_KONTO=email, domyślnie) - sekwencja z huami-token:
+1. POST api-user-us2.zepp.com/v2/registrations/tokens (formularz zaszyfrowany AES-CBC stałym kluczem
+   aplikacji Zepp) -> 303 z access/refresh w adresie przekierowania.
+2. POST api-mifit-us2.zepp.com/v2/client/login (grant_type=access_token, third_name=huami) -> login_token,
+   app_token, user_id. Logujemy się tożsamością aplikacji Zepp (com.huami.midong), nie Zepp Life - telefon
+   z Zepp Life ma osobną sesję.
+Konto Xiaomi (ZEPP_KONTO=xiaomi) - jak niżej (punkty 1-2). Konta założonego przez Google nie da się
+zalogować automatycznie.
+
 RYZYKO: SmartScaleConnect opisuje, że synchronizacja wylogowuje aplikację na telefonie. Hipoteza: robi to
 każde pełne logowanie (nowy login_token). Dlatego logujemy się raz, potem tylko odświeżamy app_token
 i nigdy nie wywołujemy wylogowania.
@@ -26,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 import time
 import uuid
@@ -33,6 +43,16 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 
+URL_TOKENY_EMAIL = "https://api-user-us2.zepp.com/v2/registrations/tokens"
+URL_LOGIN_EMAIL = "https://api-mifit-us2.zepp.com/v2/client/login"
+URL_APP_TOKENS_EMAIL = "https://api-mifit-us2.zepp.com/v1/client/app_tokens"
+KLUCZ_ZEPP = b"xeNtBVqzDc6tuNTh"                     # stała aplikacji Zepp (z huami-token), nie sekret użytkownika
+IV_ZEPP = b"MAAAYAAAAAAAAABg"
+WERSJA_ZEPP = "9.12.5"
+NAGLOWKI_ZEPP = {"app_name": "com.huami.midong", "appname": "com.huami.midong", "cv": "151689_9.12.5", "v": "2.0",
+                 "appplatform": "android_phone", "vb": "202509151347", "vn": WERSJA_ZEPP,
+                 "user-agent": "Zepp/9.12.5 (Pixel 4; Android 12; Density/2.75)", "x-hm-ekv": "1",
+                 "content-type": "application/x-www-form-urlencoded; charset=UTF-8"}
 CLIENT_ID = "428135909242707968"                    # Zepp Life w OAuth2 Xiaomi
 REDIRECT_URI = "https://api-mifit-cn.huami.com/huami.health.loginview.do"
 URL_AUTHORIZE = "https://account.xiaomi.com/oauth2/authorize"
@@ -131,11 +151,74 @@ def _kod_oauth(email: str, haslo: str) -> str:
         raise BladZepp("protokol", "nie dostałem kodu OAuth2 od Xiaomi")
 
 
-def zaloguj_haslem(email: str, haslo: str, device_id: str | None = None) -> dict:
+def _szyfruj_aes(dane: bytes) -> bytes:
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    uzup = padding.PKCS7(128).padder()
+    blok = uzup.update(dane) + uzup.finalize()
+    szyfr = Cipher(algorithms.AES(KLUCZ_ZEPP), modes.CBC(IV_ZEPP)).encryptor()
+    return szyfr.update(blok) + szyfr.finalize()
+
+
+def _host_api(d: dict) -> str | None:
+    """Host API danych z odpowiedzi logowania (konta są regionalne, np. api-mifit-de2)."""
+    for dom in d.get("domains") or []:
+        if not isinstance(dom, dict):
+            continue
+        for h in [dom.get("host")] + list(dom.get("cnames") or []):
+            if isinstance(h, str) and h.startswith("api-mifit") and "." in h:
+                return h
+    return None
+
+
+def zaloguj_email(email: str, haslo: str, device_id: str) -> dict:
+    """Konto Zepp (e-mail + hasło)."""
+    form = {"emailOrPhone": email, "state": "REDIRECTION", "client_id": "HuaMi", "password": haslo,
+            "redirect_uri": "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html",
+            "region": "us-west-2", "token": ["access", "refresh"], "country_code": "US"}
+    from urllib.parse import urlencode
+    r = _zapytanie("POST", URL_TOKENY_EMAIL, data=_szyfruj_aes(urlencode(form, doseq=True).encode()),
+                   headers=NAGLOWKI_ZEPP, allow_redirects=False)
+    gdzie = r.headers.get("Location") or ""
+    par = parse_qs(urlparse(gdzie).query)
+    if r.status_code != 303 or not par.get("access"):
+        blad = (par.get("error") or [""])[0]
+        if r.status_code in (400, 401) or blad in ("0106", "0115", "0117", "0118"):
+            raise BladZepp("zle_haslo", f"Zepp odrzucił e-mail albo hasło (HTTP {r.status_code}{', kod ' + blad if blad else ''})")
+        raise BladZepp("protokol", f"logowanie Zepp: brak tokenu w przekierowaniu (HTTP {r.status_code})")
+    form2 = {"code": par["access"][0], "device_id": device_id, "device_model": "android_phone",
+             "app_version": WERSJA_ZEPP, "dn": "api-mifit.zepp.com,api-user.zepp.com,api-mifit.zepp.com,"
+             "api-watch.zepp.com,app-analytics.zepp.com,auth.zepp.com,api-analytics.zepp.com",
+             "third_name": "huami", "source": "com.huami.watch.hmwatchmanager:9.12.5:151689",
+             "app_name": "com.huami.midong", "country_code": "US", "grant_type": "access_token",
+             "allow_registration": "false", "lang": "en"}
+    r2 = _zapytanie("POST", URL_LOGIN_EMAIL, data=form2, headers={
+        "app_name": "com.huami.webapp", "appname": "com.huami.webapp", "origin": "https://user.zepp.com",
+        "referer": "https://user.zepp.com/", "content-type": "application/x-www-form-urlencoded; charset=UTF-8"})
+    try:
+        d = r2.json()
+    except ValueError:
+        raise BladZepp("protokol", f"nieoczekiwana odpowiedź logowania Zepp (HTTP {r2.status_code})") from None
+    ti = d.get("token_info") or {}
+    if not (ti.get("app_token") and ti.get("login_token") and ti.get("user_id")):
+        raise BladZepp("protokol", f"Zepp nie zwrócił tokenów (wynik: {str(d.get('result'))[:40]})")
+    stan = _stan_tokenow(ti, device_id)
+    stan["konto"] = "email"
+    if (host := _host_api(d)):
+        stan["host_api"] = host
+    return stan
+
+
+def zaloguj_haslem(email: str, haslo: str, device_id: str | None = None, konto: str | None = None) -> dict:
     """Pełne logowanie. Zwraca stan tokenów (do zaszyfrowanego zapisu). Może wylogować telefon!"""
     if not email or not haslo:
         raise BladZepp("zle_haslo", "brak ZEPP_EMAIL / ZEPP_PASSWORD na serwerze")
     device_id = device_id or str(uuid.uuid4())
+    konto = (konto or os.environ.get("ZEPP_KONTO", "") or "email").strip().lower()
+    if konto == "email":
+        return zaloguj_email(email, haslo, device_id)
+    if konto != "xiaomi":
+        raise BladZepp("konfiguracja", "ZEPP_KONTO musi mieć wartość email albo xiaomi")
     kod = _kod_oauth(email, haslo)
     form = {"app_name": APP_NAME, "app_version": APP_VERSION, "code": kod, "country_code": "CN",
             "device_id": device_id, "device_model": "phone", "dn": DN, "grant_type": "request_token",
@@ -148,7 +231,11 @@ def zaloguj_haslem(email: str, haslo: str, device_id: str | None = None) -> dict
     ti = d.get("token_info") or {}
     if not (ti.get("app_token") and ti.get("login_token") and ti.get("user_id")):
         raise BladZepp("protokol", f"Zepp nie zwrócił tokenów (wynik: {str(d.get('result'))[:40]})")
-    return _stan_tokenow(ti, device_id)
+    stan = _stan_tokenow(ti, device_id)
+    stan["konto"] = "xiaomi"
+    if (host := _host_api(d)):
+        stan["host_api"] = host
+    return stan
 
 
 def _stan_tokenow(ti: dict, device_id: str, poprzedni: dict | None = None) -> dict:
@@ -169,8 +256,13 @@ def odswiez(stan: dict) -> dict:
     """Nowy app_token z login_token (bez hasła i bez nowej sesji)."""
     if not stan.get("login_token"):
         raise BladZepp("token", "brak login_token w stanie")
-    par = {"app_name": APP_NAME, "dn": DN, "login_token": stan["login_token"], "os_version": "4.1.0"}
-    r = _zapytanie("GET", URL_APP_TOKENS, params=par)
+    if stan.get("konto") == "email":
+        url, par = URL_APP_TOKENS_EMAIL, {"app_name": "com.huami.midong", "dn": "api-mifit.zepp.com",
+                                          "login_token": stan["login_token"], "os_version": "4.1.0"}
+    else:
+        url, par = URL_APP_TOKENS, {"app_name": APP_NAME, "dn": DN, "login_token": stan["login_token"],
+                                    "os_version": "4.1.0"}
+    r = _zapytanie("GET", url, params=par)
     try:
         d = r.json()
     except ValueError:
@@ -190,6 +282,8 @@ def token_wygasa(stan: dict, zapas_s: int = 24 * 3600) -> bool:
 
 def _strona_rekordow(stan: dict, do_czasu: int) -> dict:
     url = URL_REKORDY.format(uid=stan["user_id"])
+    if stan.get("host_api"):
+        url = url.replace("api-mifit.zepp.com", stan["host_api"], 1)
     r = _zapytanie("GET", url, params={"limit": 200, "toTime": do_czasu},
                    headers={"apptoken": stan["app_token"], "appname": APP_NAME, "User-Agent": UA})
     if r.status_code == 401:

@@ -275,7 +275,9 @@ Render → `garmin-plan-loader` → Environment:
 
 | zmienna | |
 |---|---|
-| `ZEPP_EMAIL`, `ZEPP_PASSWORD` | konto **Xiaomi**, którym logujesz się w Zepp Life |
+| `ZEPP_EMAIL`, `ZEPP_PASSWORD` | konto Zepp Life z **e-mailem i hasłem** (konta założonego przez Google nie da się zalogować automatycznie) |
+| `ZEPP_KONTO` | `email` (domyślnie: konto Zepp/Amazfit z e-mailem) albo `xiaomi` (konto Xiaomi) |
+| `ZEPP_STARE_APPTOKEN`, `ZEPP_STARE_USER_ID` | opcjonalnie, jednorazowo: token i id starego konta (np. logowanego przez Google) z przeglądarki – tryb `historia` doczyta z niego starą historię (tylko odczyt); potem usuń |
 | `WAGA_TOKEN` | długi losowy tekst (ten sam w sekrecie GitHub) |
 | `WAGA_MIN`, `WAGA_MAX` | zakres masy Twojego profilu, np. `65` i `85` |
 | `WAGA_ARKUSZ_ID` | opcjonalnie; domyślnie arkusz „Pomiary” właściciela |

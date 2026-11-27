@@ -116,9 +116,10 @@ def zakres_masy() -> tuple[float, float]:
     return lo, hi
 
 
-def filtruj(pomiary: list[dict], lo: float, hi: float, uid: str | None = None) -> tuple[list[dict], list[dict]]:
+def filtruj(pomiary: list[dict], lo: float, hi: float, uid=None) -> tuple[list[dict], list[dict]]:
     """(przyjęte, odrzucone). Tylko główny profil konta i masa w [lo, hi]. Odrzucone mają pole status."""
-    moje = {"-1", "0", ""} | ({str(uid)} if uid else set())
+    uids = [uid] if isinstance(uid, str) else list(uid or [])
+    moje = {"-1", "0", ""} | {str(u) for u in uids if u}
     moje |= {x.strip() for x in os.environ.get("WAGA_PROFIL", "").split(",") if x.strip()}
     ok, zle = [], []
     for p in pomiary:
@@ -410,11 +411,34 @@ def tryb_test(refresh: str, stan: dict) -> dict:
             "garmin": {"pomiarow_30_dni": len(garmin)}}
 
 
+def _stare_konto() -> dict | None:
+    """Jednorazowy odczyt historii ze starego konta (np. logowanego przez Google): token z przeglądarki.
+    Tylko odczyt, bez odświeżania i bez logowania."""
+    tok, uid = os.environ.get("ZEPP_STARE_APPTOKEN", "").strip(), os.environ.get("ZEPP_STARE_USER_ID", "").strip()
+    if not tok and not uid:
+        return None
+    if not (tok and uid):
+        raise BladWagi("konfiguracja", "Dla starego konta ustaw oba: ZEPP_STARE_APPTOKEN i ZEPP_STARE_USER_ID.")
+    stan = {"user_id": uid, "app_token": tok}
+    if (host := os.environ.get("ZEPP_STARE_HOST", "").strip()):
+        stan["host_api"] = host
+    return stan
+
+
 def tryb_historia(refresh: str, stan: dict) -> dict:
     lo, hi = zakres_masy()
     surowe, info = _pobierz_z_zepp(stan, 0)
+    uids = [(stan.get("zepp") or {}).get("user_id")]
+    if (stare := _stare_konto()):
+        try:
+            stare_rek = zepp.rekordy(stare, 0)
+        except zepp.BladZepp as e:
+            raise zepp.BladZepp(e.kategoria, "stare konto: " + e.opis) from None
+        info["stare_konto_rekordow"] = len(stare_rek)
+        surowe = list(surowe) + stare_rek
+        uids.append(stare["user_id"])
     pomiary = z_rekordow(surowe)
-    ok, zle = filtruj(pomiary, lo, hi, (stan.get("zepp") or {}).get("user_id"))
+    ok, zle = filtruj(pomiary, lo, hi, uids)
     zapisz_backup(refresh, scal_backup(wczytaj_backup(refresh), ok + zle))
     stan["historia"] = {"pobrano": _teraz(), "raport": raport(ok, zle)}
     stan.pop("historia_kursor", None)

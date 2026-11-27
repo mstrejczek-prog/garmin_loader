@@ -264,6 +264,17 @@ class TestPrzebiegi(Baza):
         kod, d = self.post("historia")
         self.assertEqual((kod, d["kategoria"]), (500, "konfiguracja"))
 
+    def test_historia_ze_starego_konta(self):
+        self.zepp_rekordy = [rekord(T0 + 10 * 86400, 74.0)]
+        self.post("test")
+        stare = {"items": [rekord(T0, 76.0, member="999"), rekord(T0 + 86400, 75.5)], "next": 0}
+        with mock.patch.dict(os.environ, {"ZEPP_STARE_APPTOKEN": "STARY", "ZEPP_STARE_USER_ID": "999"}), \
+                mock.patch.object(zepp, "_strona_rekordow", lambda st, do: stare if st["app_token"] == "STARY" else {}):
+            kod, d = self.post("historia")
+        self.assertEqual((kod, d["pomiarow"], d["zepp"]["stare_konto_rekordow"]), (200, 3, 2))
+        with mock.patch.dict(os.environ, {"ZEPP_STARE_APPTOKEN": "STARY"}):
+            self.assertEqual(self.post("historia")[1]["kategoria"], "konfiguracja")
+
     def test_narzedzie_mcp(self):
         self.zepp_rekordy = [rekord(T0, 75.0)]
         self.post("test")
@@ -338,6 +349,39 @@ class TestZepp(unittest.TestCase):
         self.assertEqual(zh.call_count, 1)
         self.assertEqual(e.exception.kategoria, "token")
 
+    def test_logowanie_email_zepp(self):
+        przekier = Odp(303, {}, naglowki={"Location": "https://s3/x?access=ACC&refresh=REF&country_code=PL"})
+        login = Odp(dane={"token_info": {"login_token": "L3", "app_token": "A3", "user_id": "u3", "app_ttl": 100},
+                          "domains": [{"host": "api-mifit.zepp.com", "cnames": ["api-mifit-de2.zepp.com"]}]})
+        h = AtrapaHttp([("registrations/tokens", przekier), ("v2/client/login", login)])
+        with mock.patch.object(zepp, "_http", h):
+            stan = zepp.zaloguj_haslem("e@x", HASLO)                       # domyślnie konto e-mail
+        self.assertEqual((stan["konto"], stan["app_token"], stan["login_token"], stan["host_api"]),
+                         ("email", "A3", "L3", "api-mifit.zepp.com"))
+        wyslane = h.wywolania[0][2]["data"]
+        self.assertIsInstance(wyslane, bytes)
+        self.assertNotIn(HASLO.encode(), wyslane)                           # formularz zaszyfrowany
+        self.assertEqual(h.wywolania[1][2]["data"]["code"], "ACC")
+
+    def test_logowanie_email_zle_haslo(self):
+        h = AtrapaHttp([("registrations/tokens", Odp(303, {}, naglowki={"Location": "https://s3/x?error=0106"}))])
+        with mock.patch.object(zepp, "_http", h):
+            with self.assertRaises(zepp.BladZepp) as e:
+                zepp.zaloguj_haslem("e@x", HASLO)
+        self.assertEqual(e.exception.kategoria, "zle_haslo")
+        self.assertNotIn(HASLO, str(e.exception))
+
+    def test_host_regionalny_i_odswiezenie_email(self):
+        self.assertEqual(zepp._host_api({"domains": [{"host": "api-user.zepp.com"},
+                                                     {"host": "x", "cnames": ["api-mifit-de2.huami.com"]}]}),
+                         "api-mifit-de2.huami.com")
+        h = AtrapaHttp([("api-mifit-us2.zepp.com/v1/client/app_tokens", Odp(dane={"token_info": {"app_token": "N"}})),
+                        ("api-mifit-de2.huami.com/users/u1", Odp(dane={"items": [rekord(T0, 75)], "next": 0}))])
+        with mock.patch.object(zepp, "_http", h):
+            st = zepp.odswiez(self.stan(konto="email", host_api="api-mifit-de2.huami.com"))
+            self.assertEqual(st["app_token"], "N")
+            self.assertEqual(len(zepp.rekordy(st)), 1)
+
     def test_blokada_ip(self):
         h = AtrapaHttp([("weightRecords", Odp(429, {}))])
         with mock.patch.object(zepp, "_http", h):
@@ -359,14 +403,14 @@ class TestZepp(unittest.TestCase):
         s = sesja({"code": 0, "location": "https://sts.example/x"})
         with mock.patch.object(zepp, "_nowa_sesja", lambda: s), \
                 mock.patch.object(zepp, "_http", AtrapaHttp([("v2/client/login", logowanie)])) as h:
-            stan = zepp.zaloguj_haslem("e@x", HASLO)
+            stan = zepp.zaloguj_haslem("e@x", HASLO, konto="xiaomi")
         self.assertEqual((stan["app_token"], stan["login_token"], stan["user_id"]), ("A2", "L2", "u9"))
         self.assertNotIn(HASLO, json.dumps([w[2] for w in s.wywolania]))   # wysyłany tylko hash MD5
         for odp, kat in (({"code": 70016}, "zle_haslo"), ({"captchaUrl": "/c"}, "captcha"),
                          ({"code": 0, "location": "x", "notificationUrl": "/n"}, "weryfikacja")):
             with mock.patch.object(zepp, "_nowa_sesja", lambda o=odp: sesja(o)):
                 with self.assertRaises(zepp.BladZepp) as e:
-                    zepp.zaloguj_haslem("e@x", HASLO)
+                    zepp.zaloguj_haslem("e@x", HASLO, konto="xiaomi")
             self.assertEqual(e.exception.kategoria, kat)
             self.assertNotIn(HASLO, str(e.exception))
 

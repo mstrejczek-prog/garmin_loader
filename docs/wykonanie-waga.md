@@ -44,6 +44,15 @@ Testy jednostkowe (atrapy, bez sieci): 24 testy, w tym odpowiedniki testów akce
 w drugim przebiegu), 4 (pomiar spoza zakresu tylko w backupie) i 5 (złe hasło / brak sieci → jeden błąd,
 bez danych logowania w odpowiedzi i logach).
 
+### 2026-11-27 – konto
+
+Stare konto Zepp Life jest logowane przez Google - bez hasła, nie da się go zalogować automatycznie i nie ma
+eksportu w aplikacji. Właściciel założył drugie konto (e-mail + hasło) - docelowe źródło. Dodane logowanie kontem
+Zepp e-mail (huami-token: `POST api-user-us2.zepp.com/v2/registrations/tokens` z formularzem AES-CBC ->
+`POST api-mifit-us2.zepp.com/v2/client/login`, tożsamość aplikacji Zepp `com.huami.midong`; odświeżanie
+`api-mifit-us2.zepp.com/v1/client/app_tokens`; host danych z pola `domains` odpowiedzi) oraz jednorazowy odczyt
+historii ze starego konta tokenem z przeglądarki (`ZEPP_STARE_APPTOKEN`, `ZEPP_STARE_USER_ID`).
+
 ### Do zrobienia (kolejność ze specyfikacji)
 
 - [ ] **Krok 0 – test wylogowania**: Actions → Waga → `test` (pierwsze logowanie). Potem ważenie i sprawdzenie,
