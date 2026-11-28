@@ -272,7 +272,9 @@ def odswiez(stan: dict) -> dict:
         raise BladZepp("token", f"odświeżenie tokenu nieudane (HTTP {r.status_code})") from None
     ti = d.get("token_info") or {}
     if r.status_code != 200 or not ti.get("app_token"):
-        raise BladZepp("token", f"odświeżenie tokenu nieudane (HTTP {r.status_code})")
+        wynik = str(d.get("result") or d.get("message") or d.get("code") or "")[:40]
+        raise BladZepp("token", f"odświeżenie tokenu nieudane (HTTP {r.status_code}, wynik: {wynik or '-'}, "
+                                f"pola: {','.join(sorted(d.keys()))[:60]})")
     return _stan_tokenow(ti, stan.get("device_id") or str(uuid.uuid4()), stan)
 
 
