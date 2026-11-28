@@ -17,7 +17,8 @@ pełny raport pokazuje narzędzie MCP `waga`.
 
 Skład ciała jest brany z Zepp bez przeliczeń. Zmienne serwera: ZEPP_EMAIL, ZEPP_PASSWORD, WAGA_TOKEN,
 WAGA_MIN, WAGA_MAX, WAGA_ARKUSZ_ID (domyślnie arkusz „Pomiary”), WAGA_PARTIA (domyślnie 25),
-WAGA_PROFIL (opcjonalnie: dodatkowe memberId uznawane za Twój profil, po przecinku).
+WAGA_PROFIL (opcjonalnie: dodatkowe memberId uznawane za Twój profil, po przecinku),
+WAGA_TYLKO_IMPEDANCJA=tak (pomiary bez impedancji tylko do backupu).
 """
 from __future__ import annotations
 
@@ -116,6 +117,11 @@ def zakres_masy() -> tuple[float, float]:
     return lo, hi
 
 
+def tylko_z_impedancja() -> bool:
+    """WAGA_TYLKO_IMPEDANCJA=tak: pomiary bez impedancji (np. w skarpetach/ubraniu) tylko do backupu."""
+    return os.environ.get("WAGA_TYLKO_IMPEDANCJA", "").strip().lower() in ("tak", "1", "true", "yes")
+
+
 def filtruj(pomiary: list[dict], lo: float, hi: float, uid=None) -> tuple[list[dict], list[dict]]:
     """(przyjęte, odrzucone). Tylko główny profil konta i masa w [lo, hi]. Odrzucone mają pole status."""
     uids = [uid] if isinstance(uid, str) else list(uid or [])
@@ -127,6 +133,8 @@ def filtruj(pomiary: list[dict], lo: float, hi: float, uid=None) -> tuple[list[d
             zle.append({**p, "status": "odrzucony:inny_profil"})
         elif not lo <= p["masa"] <= hi:
             zle.append({**p, "status": "odrzucony:zakres_masy"})
+        elif not p["impedancja"] and tylko_z_impedancja():
+            zle.append({**p, "status": "odrzucony:bez_impedancji"})
         else:
             ok.append({**p, "status": "przyjety"})
     return ok, zle

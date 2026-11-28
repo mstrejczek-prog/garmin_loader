@@ -139,6 +139,13 @@ class TestPomiary(unittest.TestCase):
             ok, _ = waga.filtruj(pom, 65, 85, "u1")
         self.assertEqual(len(ok), 2)
 
+    def test_tylko_z_impedancja(self):
+        pom = [waga.normalizuj(rekord(T0, 75)), waga.normalizuj(rekord(T0 + 1, 78, imp=0))]
+        self.assertEqual(len(waga.filtruj(pom, 65, 85)[0]), 2)
+        with mock.patch.dict(os.environ, {"WAGA_TYLKO_IMPEDANCJA": "tak"}):
+            ok, zle = waga.filtruj(pom, 65, 85)
+        self.assertEqual(([p["masa"] for p in ok], [p["status"] for p in zle]), ([75], ["odrzucony:bez_impedancji"]))
+
     def test_raport_skoki(self):
         pom = [waga.normalizuj(rekord(T0, 75)), waga.normalizuj(rekord(T0 + 86400, 77.5)),
                waga.normalizuj(rekord(T0 + 2 * 86400, 77.0))]

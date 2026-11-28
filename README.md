@@ -284,6 +284,7 @@ Render → `garmin-plan-loader` → Environment:
 | `WAGA_MIN`, `WAGA_MAX` | zakres masy Twojego profilu, np. `65` i `85` |
 | `WAGA_ARKUSZ_ID` | opcjonalnie; domyślnie arkusz „Pomiary” właściciela |
 | `WAGA_PARTIA` | opcjonalnie; pomiarów na jedno wywołanie przy wysyłce historii (domyślnie 25) |
+| `WAGA_TYLKO_IMPEDANCJA` | `tak` = pomiary bez impedancji (w skarpetach/ubraniu, zwykle cięższe) tylko do backupu; do Garmina i arkusza idą tylko pełne pomiary ze składem |
 | `WAGA_PROFIL` | opcjonalnie; dodatkowe `memberId` uznawane za Twój profil (gdy raport pokazuje „inny_profil” dla Twoich pomiarów) |
 
 Wymagane też: połączony Dysk Google (`GOOGLE_*`) i token Garmina connectora. W Google Cloud Console projektu
