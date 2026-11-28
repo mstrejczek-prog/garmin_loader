@@ -53,19 +53,30 @@ Zepp e-mail (huami-token: `POST api-user-us2.zepp.com/v2/registrations/tokens` z
 `api-mifit-us2.zepp.com/v1/client/app_tokens`; host danych z pola `domains` odpowiedzi) oraz jednorazowy odczyt
 historii ze starego konta tokenem z przeglądarki (`ZEPP_STARE_APPTOKEN`, `ZEPP_STARE_USER_ID`).
 
-### Do zrobienia (kolejność ze specyfikacji)
+### 2026-11-27/28 – testy i wdrożenie
 
-- [ ] **Krok 0 – test wylogowania**: Actions → Waga → `test` (pierwsze logowanie). Potem ważenie i sprawdzenie,
-      czy Zepp Life na telefonie jest zalogowany. Powtórka `test` po 24 h. Wynik: …
-- [ ] **Krok 1 – test IP**: wynik `test` z serwera (Render) – Zepp: …, Garmin: …
-- [ ] **Krok 2 – historia**: raport (narzędzie MCP `waga`) – akceptacja: …
-- [ ] **Krok 3 – wyslij_historie**: …
-- [ ] **Krok 4 – `WAGA_CRON=tak`**, test akceptacyjny 2 (ważenie → Garmin i arkusz w ≤ 3 h): …
+Bez wartości masy i składu ciała (repo jest publiczne) – pełne dane w narzędziu MCP `waga`.
+
+| krok | wynik |
+|---|---|
+| 0 – test wylogowania | **OK.** Pierwsze logowanie łącznika i dwa kolejne logowania hasłem nie wylogowały Zepp Life na telefonie; nowy pomiar widoczny w aplikacji. Powtórka po 24 h: zapisany token, bez hasła, telefon zalogowany. |
+| 1 – test IP (Render) | **OK.** Zepp i Garmin odpowiadają z serwera Render; bez 403/429/captchy/weryfikacji. Konta są na hoście regionalnym `api-mifit-de2.zepp.com`. |
+| 2 – historia | 340 rekordów (nowe konto + stare konto tokenem z przeglądarki), 2020-06 → 2026-11. Z `WAGA_TYLKO_IMPEDANCJA=tak`: 288 przyjętych (pełny skład), 51 bez impedancji i 2 spoza zakresu masy tylko w backupie, 0 z obcego profilu. |
+| 3 – wysyłka historii | 288 pomiarów do Garmina (źródło `INDEX_SCALE`, skład ciała) i do zakładki „Waga”, 0 duplikatów. |
+| 4 – cron | `WAGA_CRON=tak`. Harmonogram GitHub Actions uruchamia się nieregularnie (pomijane przebiegi) – patrz otwarte problemy. |
+
+**Testy akceptacyjne**
+
+1. Test wylogowania – telefon pozostaje zalogowany. **OK.**
+2. Nowe ważenie → Garmin i arkusz w ≤ 3 h – działa przy przebiegu `sync`; termin zależy od niezawodności wyzwalacza.
+3. Drugi przebieg bez ważenia – `sync`: przyjęty 1, wysłane 0, duplikaty pominięte w Garminie i arkuszu. **OK.**
+4. Pomiar spoza zakresu tylko w backupie – 2 pomiary w historii + test jednostkowy. **OK.**
+5. Złe hasło / brak sieci – jeden fail, bez pętli, bez danych logowania (testy jednostkowe). **OK.**
 
 ### Otwarte problemy
 
-- Endpointy Zepp pochodzą z kodu referencyjnego; `app_tokens` (odświeżanie) nie jest użyte w SmartScaleConnect
-  – jeśli nie zadziała, łącznik użyje awaryjnie hasła (widoczne w podsumowaniu) i trzeba będzie to poprawić.
-- Filtr profilu: zakładamy, że rekordy głównego profilu mają `memberId` = -1 (albo `user_id`); jeśli raport
-  pokaże Twoje pomiary jako „inny_profil”, ustaw `WAGA_PROFIL`.
-- Ryzyko blokady IP Render/captchy Xiaomi – plan B: uruchomienie `waga.przebieg()` na Home Assistant / Railway.
+- **Telefon unieważnia token łącznika po ważeniu.** Synchronizacja pomiaru w Zepp Life daje 401 na tokenie łącznika,
+  a odświeżenie (`/v1/client/app_tokens`) nie zwraca nowego tokenu. Najbliższy przebieg loguje się hasłem (najwyżej
+  raz na przebieg, ~1×/dobę; adnotacja „awaryjne logowanie” w Actions). Telefon nie traci sesji. TTL `app_token` 30 dni.
+- **Harmonogram GitHub Actions jest zawodny** (opóźnienia i pomijane przebiegi). Propozycja: zewnętrzny wyzwalacz
+  wołający `POST /waga/sync` z nagłówkiem `Authorization: Bearer <WAGA_TOKEN>`.

@@ -308,6 +308,10 @@ GitHub → Settings → Secrets and variables → Actions: sekret `WAGA_TOKEN`; 
   żądać captchy (`zepp_captcha`) albo weryfikacji konta (`zepp_weryfikacja`).
 - Według autora SmartScaleConnect synchronizacja może **wylogować Zepp Life na telefonie**. Łącznik ogranicza to
   do jednego logowania (patrz „Tokeny”), ale wynik zależy od Zepp – sprawdzone w kroku 0 (`docs/wykonanie-waga.md`).
+- Synchronizacja pomiaru w Zepp Life na telefonie unieważnia token łącznika – najbliższy przebieg loguje się wtedy
+  hasłem (raz, z ostrzeżeniem w Actions). Telefon nie jest przy tym wylogowywany.
+- Harmonogram GitHub Actions bywa opóźniony albo pomijany. Pewniejszy jest zewnętrzny cron wołający
+  `POST /waga/sync` z nagłówkiem `Authorization: Bearer <WAGA_TOKEN>`.
 - Darmowy Render zasypia – pierwsze wywołanie budzi serwer (do ~1 min). GitHub wyłącza harmonogram w publicznym
   repo po 60 dniach bez commitów – wtedy wystarczy go włączyć w zakładce Actions.
 - Garmin nie deduplikuje sam – łącznik porównuje czas i masę; pomiar wpisany ręcznie w Garminie o innej
